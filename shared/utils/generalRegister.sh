@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-
+set -x
 # Some default parameters
 clean_up=0
 
@@ -20,9 +20,9 @@ sh MacaqueReg.sh -i [movable] -o [output directory] -g [gca file path] -r [regis
 Required arguments:
 -i	input volume (to be registered, needs to be skullstripped).
 -o	output directory (e.g. ${subject}/mri/transforms).
--r	target volume (the space to be registered to)
--m  mode (rigid, affine, nonlinear transform to be apply)
--l  loss function (MI, CC)
+-r	target volume (the space to be registered to).
+-m	mode (rigid, affine, nonlinear transform to be apply).
+-l	loss function (MI, CC).
 
 Optional arguments
 -c	clean up intermediate files. Include this flag to remove some 
@@ -45,6 +45,7 @@ while getopts ":i:o:w:r:m:ch" opt; do
 	w) WORK_DIR=${OPTARG};;
     r) trg=${OPTARG};;
     m) mode=${OPTARG};;
+	l) loss=${OPTARG};;
     c) clean_up=1;;
     h)
 	  usage
@@ -80,6 +81,9 @@ elif [ "x" == "x$trg" ]; then
 elif [ "x" == "x$mode" ]; then
     echo "-m [mode] input is required"
     exit 1
+elif [ "x" == "x$loss" ]; then
+    echo "-m [loss function] input is required"
+    exit 1
 elif [ "x" == "x$(which antsRegistration)" ]; then
   echo "Could not find ANTs"
   exit 1
@@ -92,6 +96,7 @@ Running registerTalairach with the following parameters:
 - work directory: 			${WORK_DIR}
 - reference volume: 		${trg}
 - register mode:            ${mode}
+- loss function:			${loss}
 "
 
 if [[ clean_up -eq 1 ]]
@@ -368,5 +373,5 @@ echo
 echo register done.
 echo
 
-exit 0
+return `basename ${regBase}_final.nii.gz`
 

@@ -150,27 +150,14 @@ function AvgPadImage() {
             continue
         fi
 
-        # Average all
-        for file in $files; do
-            echo $file
-        done
-        fslmerge -t ${PRE_PATH}/${Txw}_merged.nii.gz $files
-        fslmaths ${PRE_PATH}/${Txw}_merged.nii.gz -Tmean ${PRE_PATH}/${Txw}_merged.nii.gz
+        # Average all        
+        sh ${HCPPIPEDIR}/PreProcess/scripts/AnatomicalAverage.sh \
+        -i "${files}" \
+        -o ${PRE_PATH}  \
+        -w ${PRE_PATH}/Avg  \
+        -c
 
-        sh ${HCPPIPEDIR}/PreProcess/scripts/AnatomicalAverage.sh
-        -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} \
-        -m ${TemplateMask} \
-        -n \
-        -w ${TXwFolder}/Average${TXw}Images \
-        --noclean 
-        -v \
-        -b $BrainSize $OutputTXwImageSTRING
-
-
-        cp ${PRE_PATH}/${Txw}_merged.nii.gz ${PRE_PATH}/${Txw}.nii.gz
-
-        # Remove intermediate results
-        rm ${PRE_PATH}/${Txw}_merged*.nii.gz
+        mv ${PRE_PATH}/*_merged.nii.gz ${PRE_PATH}/${Txw}.nii.gz
     done
 }
 
