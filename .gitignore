@@ -15,6 +15,7 @@
 global
 MSMAII
 MSMConfig
-shared
+shared/nbest
+shared/transforms
 Supplemental
 Examples
