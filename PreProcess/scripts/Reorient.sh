@@ -2,7 +2,6 @@
 set -e
 # Some default parameters
 clean_up=0
-reg_stages=3
 
 # Help message
 usage () {
@@ -170,8 +169,9 @@ register_one_step() {
 
 		doRegister
 	else
+		tmp=${mov}
 		mov=${trg}
-		trg=${mov}
+		trg=${tmp}
 		regBase="${OUTPUT_DIR}"/"${movBase%%.*}"_to_"${trgBase%%.*}"
 
 		doRegister

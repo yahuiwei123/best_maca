@@ -149,7 +149,8 @@ echo "POSIXLY_CORRECT="${POSIXLY_CORRECT}
 # Make convenience to tissue segmentaion
 # Copy nBEST folder into subject folder
 ##### Revise end.
-cp -r ${StudyFolder}/${Subject}/nBEST ${StudyFolder}/${Subject}/T1w/nBEST
+mkdir -p ${StudyFolder}/${Subject}/T1w/nBEST
+cp -r ${StudyFolder}/${Subject}/nBEST/* ${StudyFolder}/${Subject}/T1w/nBEST
 
 
 ########################################## DO WORK ##########################################
@@ -177,7 +178,7 @@ for TXw in ${Modalities} ; do
     fi
     OutputTXwImageSTRING=""
 
-#### Gradient nonlinearity correction  (for T1w and T2w) ####
+    #### Gradient nonlinearity correction  (for T1w and T2w) ####
 
 	echo "NOT PERFORMING GRADIENT DISTORTION CORRECTION"
 	i=1
@@ -189,7 +190,7 @@ for TXw in ${Modalities} ; do
 	done
     
 
-#### Average Like Scans ####
+    #### Average Like Scans ####
 
     if [ `echo $TXwInputImages | wc -w` -gt 1 ] ; then
 	mkdir -p ${TXwFolder}/Average${TXw}Images
@@ -206,15 +207,7 @@ for TXw in ${Modalities} ; do
         # ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc_brain ${TXwFolder}/${TXwImage}_brain
     fi
 
-#### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
-    # mkdir -p ${TXwFolder}/ACPCAlignment
-    # ${RUN} ${HCPPIPEDIR}/PreFreeSurfer/scripts/ACPCAlignmentNHP.sh \
-	# --workingdir=${TXwFolder}/ACPCAlignment \
-	# --in=${TXwFolder}/${TXwImage} \
-	# --ref=${TXwTemplateBrain} \
-	# --out=${TXwFolder}/${TXwImage}_acpc \
-	# --omat=${TXwFolder}/xfms/acpc.mat \
-	# --brainsize=${BrainSize}
+    #### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
     #### Added by Haiyan Wang: begin
     # Only do ACPCAlignment on T1w, and then apply it to T2w(Since T2w has been realigned to T1w)
     if [ ${TXw} = "T1w" ]; then
@@ -232,99 +225,82 @@ for TXw in ${Modalities} ; do
         cp ${T1wFolder}/xfms/acpc.mat ${TXwFolder}/xfms/acpc.mat
     fi
      #### Added by Haiyan Wang: end
-
-# cp "${TXwFolder}/${TXwImage}_acpc".nii.gz "${TXwFolder}/${TXwImage}_acpc_brain".nii.gz 
-# #### Brain Extraction (FNIRT-based Masking) ####
-#     # mkdir -p ${TXwFolder}/BrainExtraction_FNIRTbased
-#     # ${RUN} ${PipelineScripts}/BrainExtraction_FNIRTbasedNHP.sh \
-# 	# --workingdir=${TXwFolder}/BrainExtraction_FNIRTbased \
-# 	# --in=${TXwFolder}/${TXwImage}_acpc \
-# 	# --ref=${TXwTemplateBrain} \
-# 	# --refmask=${TemplateMask} \
-# 	# --ref2mm=${TXwTemplate2mm} \
-# 	# --ref2mmmask=${Template2mmMask} \
-# 	# --outbrain=${TXwFolder}/${TXwImage}_acpc_brain \
-# 	# --outbrainmask=${TXwFolder}/${TXwImage}_acpc_brain_mask \
-# 	# --fnirtconfig=${FNIRTConfig}
 done
 
 
-# ######## END LOOP over T1w and T2w #########
+######## END LOOP over T1w and T2w #########
+if [ "${withT2}" = "Yes" ] ; then
+    #### T2w to T1w Registration and Optional Readout Distortion Correction ####
+    echo "Running Registration from T2w to T1w:"
+    wdir=${T2wFolder}/T2wToT1wReg
+    if [ -e ${wdir} ] ; then
+        # DO NOT change the following line to "rm -r ${wdir}" because the chances of something going wrong with that are much higher, and rm -r always needs to be treated with the utmost caution
+        rm -r ${T2wFolder}/T2wToT1wReg
+    fi
+    mkdir -p ${wdir}
+    ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
+        ${wdir} \
+        ${T1wFolder}/${T1wImage}_acpc.nii.gz \
+        ${T1wFolder}/${T1wImage}_acpc_brain.nii.gz \
+        ${T2wFolder}/${T2wImage}_acpc.nii.gz \
+        ${T2wFolder}/${T2wImage}_acpc_brain.nii.gz \
+        ${T1wFolder}/${T1wImage}_acpc_dc.nii.gz \
+        ${T1wFolder}/${T1wImage}_acpc_dc_brain.nii.gz \
+        ${T1wFolder}/xfms/${T1wImage}_dc.nii.gz \
+        ${T1wFolder}/${T2wImage}_acpc_dc.nii.gz \
+        ${T1wFolder}/xfms/${T2wImage}_reg_dc.nii.gz
 
 
+    #### Bias Field Correction: Calculate bias field using square root of the product of T1w and T2w iamges.  ####
+    echo "Running Bias Field Correction with T1w and T2w:"
+    if [ ! -z ${BiasFieldSmoothingSigma} ] ; then
+    BiasFieldSmoothingSigma="--bfsigma=${BiasFieldSmoothingSigma}"
+    fi
+    mkdir -p ${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w
+    ${RUN} ${PipelineScripts}/BiasFieldCorrection_sqrtT1wXT1w.sh \
+        --workingdir=${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w \
+        --T1im=${T1wFolder}/${T1wImage}_acpc_dc \
+        --T1brain=${T1wFolder}/${T1wImage}_acpc_dc_brain \
+        --T2im=${T1wFolder}/${T2wImage}_acpc_dc \
+        --obias=${T1wFolder}/BiasField_acpc_dc \
+        --oT1im=${T1wFolder}/${T1wImage}_acpc_dc_restore \
+        --oT1brain=${T1wFolder}/${T1wImage}_acpc_dc_restore_brain \
+        --oT2im=${T1wFolder}/${T2wImage}_acpc_dc_restore \
+        --oT2brain=${T1wFolder}/${T2wImage}_acpc_dc_restore_brain \
+        ${BiasFieldSmoothingSigma}
+else
+    # Add by Haiyan: If T2w are not available, use N4BiasFieldCorrection to do Bias Field Correction
+    echo "Running Bias Field Correction by N4BiasFieldCorrection:"
+    N4BiasFieldCorrection -d 3 -i ${T1wFolder}/${T1wImage}_acpc_dc.nii.gz -b [256, 3] -s 3 -c [100x50x25x10,1e-5] -r 1 -t [0.15,0.01,200] -v 1 -o ${T1wFolder}/${T1wImage}_acpc_dc_restore.nii.gz
+    cp ${T1wFolder}/${T1wImage}_acpc_dc_restore.nii.gz ${T1wFolder}/${T1wImage}_acpc_dc_restore_brain.nii.gz
+    cp ${T1wFolder}/${T2wImage}_acpc_dc.nii.gz ${T1wFolder}/${T2wImage}_acpc_dc_restore.nii.gz
+    cp ${T1wFolder}/${T2wImage}_acpc_dc_brain.nii.gz ${T1wFolder}/${T2wImage}_acpc_dc_restore_brain.nii.gz
+fi 
 
-# #### T2w to T1w Registration and Optional Readout Distortion Correction ####
-# wdir=${T2wFolder}/T2wToT1wReg
-# # if [ -e ${wdir} ] ; then
-# #     # DO NOT change the following line to "rm -r ${wdir}" because the chances of something going wrong with that are much higher, and rm -r always needs to be treated with the utmost caution
-# #     rm -r ${T2wFolder}/T2wToT1wReg
-# # fi
-# mkdir -p ${wdir}
-# ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
-#     ${wdir} \
-#     ${T1wFolder}/${T1wImage}_acpc.nii.gz \
-#     ${T1wFolder}/${T1wImage}_acpc_brain.nii.gz \
-#     ${T2wFolder}/${T2wImage}_acpc.nii.gz \
-#     ${T2wFolder}/${T2wImage}_acpc_brain.nii.gz \
-#     ${T1wFolder}/${T1wImage}_acpc_dc.nii.gz \
-#     ${T1wFolder}/${T1wImage}_acpc_dc_brain.nii.gz \
-#     ${T1wFolder}/xfms/${T1wImage}_dc.nii.gz \
-#     ${T1wFolder}/${T2wImage}_acpc_dc.nii.gz \
-#     ${T1wFolder}/xfms/${T2wImage}_reg_dc.nii.gz
-
-
-
-# #### Bias Field Correction: Calculate bias field using square root of the product of T1w and T2w iamges.  ####
-# if [ "${withT2}" = "Yes" ] ; then
-#     echo "Running Bias Field Correction with T1w and T2w:"
-#     if [ ! -z ${BiasFieldSmoothingSigma} ] ; then
-#     BiasFieldSmoothingSigma="--bfsigma=${BiasFieldSmoothingSigma}"
-#     fi
-#     mkdir -p ${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w
-#     ${RUN} ${PipelineScripts}/BiasFieldCorrection_sqrtT1wXT1w.sh \
-#         --workingdir=${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w \
-#         --T1im=${T1wFolder}/${T1wImage}_acpc_dc \
-#         --T1brain=${T1wFolder}/${T1wImage}_acpc_dc_brain \
-#         --T2im=${T1wFolder}/${T2wImage}_acpc_dc \
-#         --obias=${T1wFolder}/BiasField_acpc_dc \
-#         --oT1im=${T1wFolder}/${T1wImage}_acpc_dc_restore \
-#         --oT1brain=${T1wFolder}/${T1wImage}_acpc_dc_restore_brain \
-#         --oT2im=${T1wFolder}/${T2wImage}_acpc_dc_restore \
-#         --oT2brain=${T1wFolder}/${T2wImage}_acpc_dc_restore_brain \
-#         ${BiasFieldSmoothingSigma}
-# else
-#     # Add by Haiyan: If T2w are not available, use N4BiasFieldCorrection to do Bias Field Correction
-#     echo "Running Bias Field Correction by N4BiasFieldCorrection:"
-#     N4BiasFieldCorrection -d 3 -i ${T1wFolder}/${T1wImage}_acpc_dc.nii.gz -b [256, 3] -s 3 -c [100x50x25x10,1e-5] -r 1 -t [0.15,0.01,200] -v 1 -o ${T1wFolder}/${T1wImage}_acpc_dc_restore.nii.gz
-#     cp ${T1wFolder}/${T1wImage}_acpc_dc_restore.nii.gz ${T1wFolder}/${T1wImage}_acpc_dc_restore_brain.nii.gz
-#     cp ${T1wFolder}/${T2wImage}_acpc_dc.nii.gz ${T1wFolder}/${T2wImage}_acpc_dc_restore.nii.gz
-#     cp ${T1wFolder}/${T2wImage}_acpc_dc_brain.nii.gz ${T1wFolder}/${T2wImage}_acpc_dc_restore_brain.nii.gz
-# fi 
-
-# #### Atlas Registration to MNI152: FLIRT + FNIRT  #Also applies registration to T1w and T2w images ####
-# #Consider combining all transforms and recreating files with single resampling steps
-# ${RUN} ${PipelineScripts}/AtlasRegistrationToMNI152_FLIRTandFNIRT.sh \
-#     --workingdir=${AtlasSpaceFolder} \
-#     --t1=${T1wFolder}/${T1wImage}_acpc_dc \
-#     --t1rest=${T1wFolder}/${T1wImage}_acpc_dc_restore \
-#     --t1restbrain=${T1wFolder}/${T1wImage}_acpc_dc_restore_brain \
-#     --t2=${T1wFolder}/${T2wImage}_acpc_dc \
-#     --t2rest=${T1wFolder}/${T2wImage}_acpc_dc_restore \
-#     --t2restbrain=${T1wFolder}/${T2wImage}_acpc_dc_restore_brain \
-#     --ref=${T1wTemplate} \
-#     --refbrain=${T1wTemplateBrain} \
-#     --refmask=${TemplateMask} \
-#     --ref2mm=${T1wTemplate2mm} \
-#     --ref2mmmask=${Template2mmMask} \
-#     --owarp=${AtlasSpaceFolder}/xfms/acpc_dc2standard.nii.gz \
-#     --oinvwarp=${AtlasSpaceFolder}/xfms/standard2acpc_dc.nii.gz \
-#     --ot1=${AtlasSpaceFolder}/${T1wImage} \
-#     --ot1rest=${AtlasSpaceFolder}/${T1wImage}_restore \
-#     --ot1restbrain=${AtlasSpaceFolder}/${T1wImage}_restore_brain \
-#     --ot2=${AtlasSpaceFolder}/${T2wImage} \
-#     --ot2rest=${AtlasSpaceFolder}/${T2wImage}_restore \
-#     --ot2restbrain=${AtlasSpaceFolder}/${T2wImage}_restore_brain \
-#     --fnirtconfig=${FNIRTConfig}
+#### Atlas Registration to MNI152: FLIRT + FNIRT  #Also applies registration to T1w and T2w images ####
+#Consider combining all transforms and recreating files with single resampling steps
+${RUN} ${PipelineScripts}/AtlasRegistrationToMNI152_FLIRTandFNIRT.sh \
+    --workingdir=${AtlasSpaceFolder} \
+    --t1=${T1wFolder}/${T1wImage}_acpc_dc \
+    --t1rest=${T1wFolder}/${T1wImage}_acpc_dc_restore \
+    --t1restbrain=${T1wFolder}/${T1wImage}_acpc_dc_restore_brain \
+    --t2=${T1wFolder}/${T2wImage}_acpc_dc \
+    --t2rest=${T1wFolder}/${T2wImage}_acpc_dc_restore \
+    --t2restbrain=${T1wFolder}/${T2wImage}_acpc_dc_restore_brain \
+    --ref=${T1wTemplate} \
+    --refbrain=${T1wTemplateBrain} \
+    --refmask=${TemplateMask} \
+    --ref2mm=${T1wTemplate2mm} \
+    --ref2mmmask=${Template2mmMask} \
+    --owarp=${AtlasSpaceFolder}/xfms/acpc_dc2standard.nii.gz \
+    --oinvwarp=${AtlasSpaceFolder}/xfms/standard2acpc_dc.nii.gz \
+    --ot1=${AtlasSpaceFolder}/${T1wImage} \
+    --ot1rest=${AtlasSpaceFolder}/${T1wImage}_restore \
+    --ot1restbrain=${AtlasSpaceFolder}/${T1wImage}_restore_brain \
+    --ot2=${AtlasSpaceFolder}/${T2wImage} \
+    --ot2rest=${AtlasSpaceFolder}/${T2wImage}_restore \
+    --ot2restbrain=${AtlasSpaceFolder}/${T2wImage}_restore_brain \
+    --fnirtconfig=${FNIRTConfig}
 
 
-# #### Next stage: FreeSurfer/FreeSurferPipeline.sh
+#### Next stage: FreeSurfer/FreeSurferPipeline.sh

@@ -151,16 +151,22 @@ function AvgPadImage() {
         fi
 
         # Average all
+        for file in $files; do
+            echo $file
+        done
         fslmerge -t ${PRE_PATH}/${Txw}_merged.nii.gz $files
         fslmaths ${PRE_PATH}/${Txw}_merged.nii.gz -Tmean ${PRE_PATH}/${Txw}_merged.nii.gz
-        # # Then correct the orientations of raw image (Only change header file);
-        # mri_convert ${PRE_PATH}/${Txw}_merged.nii.gz ${PRE_PATH}/${Txw}_merged_RIA.nii.gz --in_orientation RIA
 
-        # # As needed by NHPHCPpipeline, zero pad to 256
-        # 3dZeropad -RL 256 -AP 256 -IS 256 -prefix ${PRE_PATH}/${Txw}_merged_RIA_256.nii.gz ${PRE_PATH}/${Txw}_merged_RIA.nii.gz
+        sh ${HCPPIPEDIR}/PreProcess/scripts/AnatomicalAverage.sh
+        -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} \
+        -m ${TemplateMask} \
+        -n \
+        -w ${TXwFolder}/Average${TXw}Images \
+        --noclean 
+        -v \
+        -b $BrainSize $OutputTXwImageSTRING
 
-        # # Ad needed by NHPHCPpipeline, change the orientations as LIA (Both in image and header file).
-        # mri_convert ${PRE_PATH}/${Txw}_merged_RIA_256.nii.gz ${PRE_PATH}/${Txw}_merged_LIA_256.nii.gz --out_orientation LIA -rt cubic
+
         cp ${PRE_PATH}/${Txw}_merged.nii.gz ${PRE_PATH}/${Txw}.nii.gz
 
         # Remove intermediate results
@@ -198,23 +204,28 @@ function SkullStrip() {
     # freeview ${nBEST_PATH}/T1w_DNS_BFC_inm100_brain.nii.gz
 
     cp ${nBEST_PATH}/brain_img/T1w_DNS_BFC_inm100.nii.gz ${PRE_PATH}/T1w.nii.gz
-    cp ${nBEST_PATH}/brain_mask/T1w_DNS_BFC_inm100.nii.gz ${PRE_PATH}/brainmask.nii.gz
+    cp ${nBEST_PATH}/brain_mask/T1w_DNS_BFC_inm100.nii.gz ${PRE_PATH}/T1w_brainmask.nii.gz
 
     ##### If there are no true T2, generate a fake T2.#######
     ###### Apply the finalmask to the T1w
     if [ -f ${PRE_PATH}/T2w.nii.gz ]; then
-        fslmaths ${PRE_PATH}/T2w.nii.gz -mas ${PRE_PATH}/brainmask.nii.gz  ${PRE_PATH}/T2w.nii.gz
+        ##### TODO
+        # register T2w to T1w
+        ##### edit by yhwei
+
+
+        fslmaths ${PRE_PATH}/T2w.nii.gz -mas ${PRE_PATH}/T1w_brainmask.nii.gz  ${PRE_PATH}/T2w.nii.gz
     else
         MaxValue=`fslstats ${PRE_PATH}/T1w.nii.gz -R | awk '{print $2}'`
         fslmaths ${PRE_PATH}/T1w.nii.gz -sub $MaxValue -mul -1 ${PRE_PATH}/T2w.nii.gz
-        fslmaths ${PRE_PATH}/T2w.nii.gz -mas ${PRE_PATH}/brainmask.nii.gz  ${PRE_PATH}/T2w.nii.gz
+        fslmaths ${PRE_PATH}/T2w.nii.gz -mas ${PRE_PATH}/T1w_brainmask.nii.gz  ${PRE_PATH}/T2w.nii.gz
     fi
 }
 
 function Reorient() {
     ###### [step7] Change the image orientation
     
-    ##### Undo
+    ##### TODO
     # Register raw image to tamplate, so that the raw image can reorient into right orientation.
     ##### End
 
@@ -236,7 +247,7 @@ function Reorient() {
 
 function main {
     # prepare some varibles
-    PRE_PATH=${SUB_PATH}/preprocess
+    PRE_PATH=${SUB_PATH}/Preprocess
     nBEST_PATH=${SUB_PATH}/nBEST
 
     # create some necessary directory

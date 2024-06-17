@@ -44,7 +44,7 @@ doRegister() {
 	--use-histogram-matching 1 \
 	--transform Rigid[1.5] \
 	--metric MI[${trg},${regBase}_init.nii.gz,1,32,Regular,0.25] \
-	--convergence [1000x500x250x100,1e-6,10] \
+	--convergence [1000x500x250x100,1e-7,10] \
 	--shrink-factors 8x4x2x1 \
 	--smoothing-sigmas 3x2x1x0vox \
 	--output [${regBase}_rigid, ${regBase}_rigid.nii.gz] \
@@ -136,8 +136,9 @@ register_one_step() {
 
 		doRegister
 	else
+		tmp=${mov}
 		mov=${trg}
-		trg=${mov}
+		trg=${tmp}
 		regBase="${OUTPUT_DIR}"/"${movBase%%.*}"_to_"${trgBase%%.*}"
 
 		doRegister

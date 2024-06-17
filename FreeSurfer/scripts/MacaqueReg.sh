@@ -2,7 +2,6 @@
 
 # Some default parameters
 clean_up=0
-reg_stages=3
 
 # Help message
 usage () {
