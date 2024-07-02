@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -x
 # Requirements for this script
 #  installed versions of: FSL5.0.1 or higher , FreeSurfer (version 5 or higher) , gradunwarp (python code from MGH)
 #  environment: FSLDIR , FREESURFER_HOME , HCPPIPEDIR , CARET7DIR , PATH (for gradient_unwarp.py)
@@ -153,102 +154,81 @@ mkdir -p ${StudyFolder}/${Subject}/T1w/nBEST
 cp -r ${StudyFolder}/${Subject}/nBEST/* ${StudyFolder}/${Subject}/T1w/nBEST
 
 
-########################################## DO WORK ##########################################
+# ########################################## DO WORK ##########################################
 
-######## LOOP over the same processing for T1w and T2w (just with different names) ########
+# ######## LOOP over the same processing for T1w and T2w (just with different names) ########
 
-Modalities="T1w T2w"
+# Modalities="T1w T2w"
 
-for TXw in ${Modalities} ; do
-    # set up appropriate input variables
-    if [ $TXw = T1w ] ; then
-        TXwInputImages="${T1wInputImages}"
-        TXwFolder=${T1wFolder}
-        TXwImage=${T1wImage}
-        TXwTemplate=${T1wTemplate}
-        TXwTemplate2mm=${T1wTemplate2mm}
-        TXwTemplateBrain=${T1wTemplateBrain}
-    else
-        TXwInputImages="${T2wInputImages}"
-        TXwFolder=${T2wFolder}
-        TXwImage=${T2wImage}
-        TXwTemplate=${T2wTemplate}
-        TXwTemplate2mm=${T2wTemplate2mm}
-        TXwTemplateBrain=${T2wTemplateBrain}
-    fi
-    OutputTXwImageSTRING=""
+# for TXw in ${Modalities} ; do
+#     # set up appropriate input variables
+#     if [ $TXw = T1w ] ; then
+#         TXwInputImages="${T1wInputImages}"
+#         TXwFolder=${T1wFolder}
+#         TXwImage=${T1wImage}
+#         TXwTemplate=${T1wTemplate}
+#         TXwTemplate2mm=${T1wTemplate2mm}
+#         TXwTemplateBrain=${T1wTemplateBrain}
+#     else
+#         TXwInputImages="${T2wInputImages}"
+#         TXwFolder=${T2wFolder}
+#         TXwImage=${T2wImage}
+#         TXwTemplate=${T2wTemplate}
+#         TXwTemplate2mm=${T2wTemplate2mm}
+#         TXwTemplateBrain=${T2wTemplateBrain}
+#     fi
+#     OutputTXwImageSTRING=""
 
-    #### Gradient nonlinearity correction  (for T1w and T2w) ####
+#     #### Gradient nonlinearity correction  (for T1w and T2w) ####
 
-	echo "NOT PERFORMING GRADIENT DISTORTION CORRECTION"
-	i=1
-	for Image in $TXwInputImages ; do
-	    ${RUN} ${FSLDIR}/bin/fslreorient2std $Image ${TXwFolder}/${TXwImage}${i}_gdc
-	    # ${RUN} ${FSLDIR}/bin/fslreorient2std `remove_ext $Image`_brain ${TXwFolder}/${TXwImage}${i}_gdc_brain
-	    OutputTXwImageSTRING="${OutputTXwImageSTRING}${TXwFolder}/${TXwImage}${i}_gdc "
-	    i=$(($i+1))
-	done
+# 	echo "NOT PERFORMING GRADIENT DISTORTION CORRECTION"
+# 	i=1
+# 	for Image in $TXwInputImages ; do
+# 	    ${RUN} ${FSLDIR}/bin/fslreorient2std $Image ${TXwFolder}/${TXwImage}${i}_gdc
+# 	    # ${RUN} ${FSLDIR}/bin/fslreorient2std `remove_ext $Image`_brain ${TXwFolder}/${TXwImage}${i}_gdc_brain
+# 	    OutputTXwImageSTRING="${OutputTXwImageSTRING}${TXwFolder}/${TXwImage}${i}_gdc "
+# 	    i=$(($i+1))
+# 	done
     
 
-    #### Average Like Scans ####
+#     #### Average Like Scans ####
 
-    if [ `echo $TXwInputImages | wc -w` -gt 1 ] ; then
-	mkdir -p ${TXwFolder}/Average${TXw}Images
-	#if [ ${AvgrdcSTRING} = "TOPUP" ] ; then
-	#    echo "PERFORMING TOPUP READOUT DISTORTION CORRECTION AND AVERAGING"
-	#    ${RUN} ${PipelineScripts}/TopupDistortionCorrectAndAverage.sh ${TXwFolder}/Average${TXw}Images "${OutputTXwImageSTRING}" ${TXwFolder}/${TXwImage} ${TopupConfig}
-	#else
-	    echo "PERFORMING SIMPLE AVERAGING"
-	    ${RUN} ${PipelineScripts}/AnatomicalAverage.sh -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} -m ${TemplateMask} -n -w ${TXwFolder}/Average${TXw}Images --noclean -v -b $BrainSize $OutputTXwImageSTRING
-	#fi
-    else
-        echo "ONLY ONE AVERAGE FOUND: COPYING"
-        ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc ${TXwFolder}/${TXwImage}
-        # ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc_brain ${TXwFolder}/${TXwImage}_brain
-    fi
+#     if [ `echo $TXwInputImages | wc -w` -gt 1 ] ; then
+# 	# mkdir -p ${TXwFolder}/Average${TXw}Images
+#         echo "PERFORMING SIMPLE AVERAGING"
+#         ${RUN} ${PipelineScripts}/AnatomicalAverage.sh -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} -m ${TemplateMask} -n -w ${TXwFolder}/Average${TXw}Images --noclean -v -b $BrainSize $OutputTXwImageSTRING
+#     else
+#         echo "ONLY ONE AVERAGE FOUND: COPYING"
+#         ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc ${TXwFolder}/${TXwImage}
+#     fi
 
-    #### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
-    #### Added by Haiyan Wang: begin
-    # Only do ACPCAlignment on T1w, and then apply it to T2w(Since T2w has been realigned to T1w)
-    if [ ${TXw} = "T1w" ]; then
-        mkdir -p ${TXwFolder}/ACPCAlignment
-        ${RUN} ${PipelineScripts}/ACPCAlignmentNHP.sh \
-           --workingdir=${TXwFolder}/ACPCAlignment   \
-           --in=${TXwFolder}/${TXwImage}   \
-           --ref=${TXwTemplateBrain}   \
-           --out=${TXwFolder}/${TXwImage}_acpc   \
-           --omat=${TXwFolder}/xfms/acpc.mat   \
-           --brainsize=${BrainSize} 
-    else
-        mkdir -p ${TXwFolder}/ACPCAlignment
-        ${FSLDIR}/bin/applywarp --rel --interp=spline -i ${TXwFolder}/${TXwImage} -r ${TXwTemplateBrain}  --premat=${T1wFolder}/xfms/acpc.mat -o ${TXwFolder}/${TXwImage}_acpc
-        cp ${T1wFolder}/xfms/acpc.mat ${TXwFolder}/xfms/acpc.mat
-    fi
-     #### Added by Haiyan Wang: end
-done
+#     #### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
+#     #### Added by yhwei: begin
+#     mkdir -p ${TXwFolder}/ACPCAlignment
+#     ${RUN} ${PipelineScripts}/ACPCAlignmentNHP.sh \
+#         -w ${TXwFolder}/ACPCAlignment   \
+#         -i ${TXwFolder}/${TXwImage}.nii.gz   \
+#         -r ${TXwTemplateBrain}   \
+#         -o ${TXwFolder}   \
+#         -a ${TXwFolder}/xfms/
+# done
+
+# ######## END LOOP over T1w and T2w #########
 
 
-######## END LOOP over T1w and T2w #########
 if [ "${withT2}" = "Yes" ] ; then
-    #### T2w to T1w Registration and Optional Readout Distortion Correction ####
-    echo "Running Registration from T2w to T1w:"
-    wdir=${T2wFolder}/T2wToT1wReg
-    if [ -e ${wdir} ] ; then
-        # DO NOT change the following line to "rm -r ${wdir}" because the chances of something going wrong with that are much higher, and rm -r always needs to be treated with the utmost caution
-        rm -r ${T2wFolder}/T2wToT1wReg
-    fi
-    mkdir -p ${wdir}
-    ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
-        ${wdir} \
-        ${T1wFolder}/${T1wImage}_acpc.nii.gz \
-        ${T1wFolder}/${T1wImage}_acpc_brain.nii.gz \
-        ${T2wFolder}/${T2wImage}_acpc.nii.gz \
-        ${T2wFolder}/${T2wImage}_acpc_brain.nii.gz \
-        ${T1wFolder}/${T1wImage}_acpc_dc.nii.gz \
-        ${T1wFolder}/${T1wImage}_acpc_dc_brain.nii.gz \
-        ${T1wFolder}/xfms/${T1wImage}_dc.nii.gz \
-        ${T1wFolder}/${T2wImage}_acpc_dc.nii.gz \
-        ${T1wFolder}/xfms/${T2wImage}_reg_dc.nii.gz
+    # #### T2w to T1w Registration and Optional Readout Distortion Correction ####
+    # echo "Running Registration from T2w to T1w:"
+    # wdir=${T2wFolder}/T2wToT1wReg
+    # mkdir -p ${wdir}
+
+    # ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
+    #     -w ${wdir} \
+    #     -r ${T1wFolder}/${T1wImage}_acpc.nii.gz \
+    #     -i ${T2wFolder}/${T2wImage}_acpc.nii.gz \
+    #     -o ${T1wFolder} \
+    #     -a ${T1wFolder}/xfms/ \
+        
 
 
     #### Bias Field Correction: Calculate bias field using square root of the product of T1w and T2w iamges.  ####
@@ -257,7 +237,7 @@ if [ "${withT2}" = "Yes" ] ; then
     BiasFieldSmoothingSigma="--bfsigma=${BiasFieldSmoothingSigma}"
     fi
     mkdir -p ${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w
-    ${RUN} ${PipelineScripts}/BiasFieldCorrection_sqrtT1wXT1w.sh \
+    sh ${PipelineScripts}/BiasFieldCorrection_sqrtT1wXT1w.sh \
         --workingdir=${T1wFolder}/BiasFieldCorrection_sqrtT1wXT1w \
         --T1im=${T1wFolder}/${T1wImage}_acpc_dc \
         --T1brain=${T1wFolder}/${T1wImage}_acpc_dc_brain \

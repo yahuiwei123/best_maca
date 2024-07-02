@@ -1,246 +1,138 @@
-#!/bin/bash 
+#!/bin/bash
 set -e
 set -x
-echo " "
-echo " START: T2w2T1Reg"
-
 ##### Revise begin.
 # edit by yhwei
-# Use ANTs to register T2w to T1w instead fsl
+# Use ANTs to register T2w to T1w
 ##### Revise end.
+echo " START: T2w2T1Reg"
 
-WD="$1"
-T1wImage="$2"
-T1wImageBrain="$3"
-T2wImage="$4"
-T2wImageBrain="$5"
-OutputT1wImage="$6"
-OutputT1wImageBrain="$7"
-OutputT1wTransform="$8"
-OutputT2wImage="$9"
-OutputT2wTransform="${10}"
+# Some default parameters
+clean_up=0
 
-T1wImageBrainFile=`basename "$T1wImageBrain"`
+# Help message
+usage () {
+echo "
+=== generalRegister ===
 
-# prepare some varibles
-mov=${T2wImageBrain}
-trg=${T1wImageBrain}
-OUTPUT_DIR=${WD}
-movBase="${mov##*/}"
-trgBase="${trg##*/}"
+This script provides an alternative to FreeSurfer's -talairach, 
+-gcareg, and -careg steps. It uses antsRegistration to create a linear
+affine (talairach.xfm and talairach.lta) and a nonlinear 
+(talairach.m3z) warp to Talairach space.
 
-# Registration functions
-doRegister() {
-	# Initialization
-	antsRegistration -d 3 --float 1 -r [${trg}, ${mov} , 0] -t Rigid[0.1] \
-	--winsorize-image-intensities [0.005, 0.995] \
-	-m MI[${trg}, ${mov}, 1, 32] -c 0 -f 4 -s 2 \
-	-o [${regBase}_init, ${regBase}_init.nii.gz] -v
+Usage:
+sh MacaqueReg.sh -i [movable] -o [output directory] -g [gca file path] -r [registration stages] [-c]
 
-	# Rigid registration. using the initialization
-	antsRegistration --dimensionality 3 --float 1 \
-	--interpolation Linear \
-	--winsorize-image-intensities [0.005, 0.995] \
-	--use-histogram-matching 1 \
-	--transform Rigid[1.5] \
-	--metric MI[${trg},${regBase}_init.nii.gz,1,32,Regular,0.25] \
-	--convergence [1000x500x250x100,1e-7,10] \
-	--shrink-factors 8x4x2x1 \
-	--smoothing-sigmas 3x2x1x0vox \
-	--output [${regBase}_rigid, ${regBase}_rigid.nii.gz] \
-	--v
+Required arguments:
+-i	input volume (to be registered, needs to be skullstripped).
+-o	output directory (e.g. ${subject}/mri/transforms).
+-r	target volume (the space to be registered to)
+-m  mode (rigid, affine, nonlinear transform to be apply)
+-l  loss function (MI, CC)
 
-	# Affine registration
-	antsRegistration --dimensionality 3 --float 1 \
-	--interpolation Linear \
-	--winsorize-image-intensities [0.005, 0.995] \
-	--use-histogram-matching 1 \
-	--transform Affine[0.1] \
-	--metric MI[${trg},${regBase}_rigid.nii.gz,1,32,Regular,0.25] \
-	--convergence [1000x500x250x100,1e-7,10] \
-	--shrink-factors 8x4x2x1 \
-	--smoothing-sigmas 3x2x1x0vox \
-	--output [${regBase}_affine, ${regBase}_affine.nii.gz] \
-	--v
+Optional arguments
+-c	clean up intermediate files. Include this flag to remove some 
+	intermediate files (saves disk space). Default: off.
+-h 	display this help message.
 
-	# Combine all transforms so far to create an initial transform for the nonlinear registration
-	antsApplyTransforms --dimensionality 3 \
-	--input ${mov} --reference-image ${trg} \
-	--output Linear[${regBase}_linear.mat] \
-	--interpolation Linear \
-	--transform ${regBase}_affine0GenericAffine.mat \
-	--transform ${regBase}_rigid0GenericAffine.mat \
-	--transform ${regBase}_init0GenericAffine.mat \
-	--v
-
-    # Nonlinear registration using affine as initial transform
-	antsRegistration --dimensionality 3 --float 1 \
-	--interpolation Linear \
-	--winsorize-image-intensities [0.005, 0.995] \
-	--use-histogram-matching 1 \
-	--initial-moving-transform ${regBase}_linear.mat \
-	--transform SyN[0.2,3,0] \
-	--metric CC[${trg}, ${mov},1,4] \
-	--convergence [100x70x50x20,1e-6,10] \
-	--shrink-factors 8x4x2x1 \
-	--smoothing-sigmas 3x2x1x0vox \
-	--output ${regBase}_nonlinear \
-	--v
-
-	# Apply the transform
-	antsApplyTransforms --dimensionality 3 --float 1 \
-	--input ${mov} --reference-image ${trg} \
-	--output [${regBase}.nii.gz, 1] \
-	--interpolation Linear \
-	--transform ${regBase}_nonlinear1Warp.nii.gz \
-	--transform ${regBase}_nonlinear0GenericAffine.mat \
-	--v
-
-	# Check that the displacement field is correct
-	antsApplyTransforms --dimensionality 3 --float 1 \
-	--input ${mov} --reference-image ${trg} \
-	--output ${regBase}_warped.nii.gz \
-	--interpolation Linear \
-	--transform ${regBase}.nii.gz \
-	--v
-}
-
-register_one_step() {
-
-	echo
-	echo Starting one-step registration.
-	echo
-	
-	# Get sizes of the volumes
-	mri_binarize --count size_mov.txt --i ${mov} --min 0.001 
-	mri_binarize --count size_trg.txt --i ${trg} --min 0.001 
-	vol_mov=$(awk '{print $(NF-2)}' size_mov.txt)
-	vol_trg=$(awk '{print $(NF-2)}' size_trg.txt)
-	rm size_mov.txt
-	rm size_trg.txt
-	movBase="${mov##*/}"
-	trgBase="${trg##*/}"
-	
-	# Register movable volume to talairach volume directly.
-	# This may work well if both volumes have approximately the same size, resolution, and anatomy.
-	echo
-	echo Step 1:
-	echo Registering movable volume to talairach volume.
-	echo
-	
-	if (( $(echo "${vol_trg} > ${vol_mov}" | bc -l) )) # if trg is larger than mov
-	then
-		mov=${mov}
-		trg=${trg}
-		regBase="${OUTPUT_DIR}"/"${movBase%%.*}"_to_"${trgBase%%.*}"
-
-		doRegister
-	else
-		tmp=${mov}
-		mov=${trg}
-		trg=${tmp}
-		regBase="${OUTPUT_DIR}"/"${movBase%%.*}"_to_"${trgBase%%.*}"
-
-		doRegister
-
-	fi	
-
-	# Combine the transforms
-	if (( $(echo "${vol_trg} > ${vol_mov}" | bc -l) )) # if trg is larger than mov
-	then
-
-		echo
-		echo Combining warp from mov to NMT and warp from NMT to talairach.
-		echo
-
-		# Movable is smaller than trg
-		antsApplyTransforms --dimensionality 3 --float 1 \
-		--input ${mov} --reference-image ${trg} \
-		--output [${finalTransformNonLin}.nii.gz, 1] \
-		--interpolation Linear \
-		--transform ${regBase}_nonlinear1Warp.nii.gz \
-		--transform ${regBase}_nonlinear0GenericAffine.mat \
-		--v
-
-		# Also combine the linear tranform
-		antsApplyTransforms --dimensionality 3 --float 1 \
-		--input ${mov} --reference-image ${trg} \
-		--output Linear[${finalTransformLin}.mat] \
-		--interpolation Linear \
-		--transform ${regBase}_linear.mat \
-		--v
-
-	else
-
-		echo
-		echo Combining inverse warp from trg to mov and warp from NMT to talairach
-		echo
-		
-		# Movable is larger than trg
-		# Invert the second transform here since we were going from NMT to movable
-        antsApplyTransforms --dimensionality 3 --float 1 \
-		--input ${mov} --reference-image ${trg} \
-		--output [${finalTransformNonLin}.nii.gz, 1] \
-		--interpolation Linear \
-		--transform [${regBase}_nonlinear0GenericAffine.mat, 1] \
-		--transform ${regBase}_nonlinear1InverseWarp.nii.gz \
-		--v
-
-		# Also combine the linear tranform
-		antsApplyTransforms --dimensionality 3 --float 1 \
-		--input ${mov} --reference-image ${trg} \
-		--output Linear[${finalTransformLin}.mat] \
-		--interpolation Linear \
-		--transform [${regBase}_linear.mat, 1] \
-		--v
-
-	fi
+For the two- and three-step registrations, pre-calculated warps can be
+used (e.g. from chimpanzee to Talairach or from NMT to Talairach) to
+save computational time. The script will automatically skip these
+steps if existing warps are found in the output directory.
+"
 
 }
 
-finalTransformLin="${OUTPUT_DIR}"/linear
-finalTransformNonLin="${OUTPUT_DIR}"/nonlinear
+# Parse arguments
+while getopts ":w:r:i:o:a:ch" opt; do
+  case $opt in
+	w) WORK_DIR=${OPTARG};;
+    r) trg=${OPTARG};;
+    i) mov=${OPTARG};;
+    o) OUTPUT_DIR=${OPTARG};;
+    a) XFM_DIR=${OPTARG};;
+    c) clean_up=1;;
+    h)
+	  usage
+	  exit 1
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+  	:)
+      echo "Option -$OPTARG requires an argument" >&2
+      exit 1
+      ;;
+  esac
+done
 
-# Do the registrations
-register_one_step;
+# Check that required parameters, paths, and folders are set
+if ((OPTIND == 1))
+then
+    usage; exit 1
+elif [ "x" == "x$WORK_DIR" ]; then
+    echo "-r [WORK_DIR] input is required"
+    exit 1
+elif [ "x" == "x$mov" ]; then
+    echo "-i [T2w] input is required"
+    exit 1
+elif [ "x" == "x$trg" ]; then
+    echo "-r [T1w] input is required"
+    exit 1
+elif [ "x" == "x$OUTPUT_DIR" ]; then
+    echo "-o [OUTPUT_DIR] input is required"
+    exit 1
+elif [ "x" == "x$XFM_DIR" ]; then
+    echo "-o [XFM_DIR] input is required"
+    exit 1
+fi
 
-# echo Removed:
-# rm -v ${regBase}*
+echo "
+Running registerTalairach with the following parameters:
+- work directory:    		${WORK_DIR}
+- T2w image: 			    ${mov}
+- T1w image:	    		${trg}
+- output directory: 		${OUTPUT_DIR}
+- xfm directory: 			${XFM_DIR}
+"
 
-# Apply the transforms to check accuracy of transforms
-# Linear transform
-antsApplyTransforms --dimensionality 3 --float 1 \
---input ${mov} --reference-image ${trg} \
---output "${OUTPUT_DIR}/${movBase%%.*}"_to_"${trgBase%%.*}"_linear.nii.gz \
---interpolation Linear \
---transform ${finalTransformLin}.mat \
---v
+if [[ clean_up -eq 1 ]]
+then
+	echo "- clean-up:				yes"
+else
+	echo "- clean-up:				no"
+fi
 
-# Nonlinear transform
-antsApplyTransforms --dimensionality 3 --float 1 \
---input "${OUTPUT_DIR}/${movBase%%.*}"_to_"${trgBase%%.*}"_linear.nii.gz \
---reference-image ${trg} \
---output "${OUTPUT_DIR}/${movBase%%.*}"_to_"${trgBase%%.*}"_nonlinear.nii.gz \
---interpolation Linear \
---transform ${finalTransformNonLin}.nii.gz \
---v
+# setup directory
+mkdir -p $OUTPUT_DIR
+mkdir -p $WORK_DIR
 
-mv "${OUTPUT_DIR}/${movBase%%.*}"_to_"${trgBase%%.*}"_nonlinear.nii.gz "$OUTPUT_DIR"/T2w2T1w.nii.gz
-mv ${finalTransformLin}.mat "${OUTPUT_DIR}"/T2w2T1w.mat
+T1wBase=`basename "$trg"`
 
-# convert ANTs .mat file into FSL .mat format
-c3d_affine_tool -ref ${trg} -src ${mov} -itk "${OUTPUT_DIR}"/T2w2T1w.mat -ras2fsl -o flirt.mat
-# wb_command -convert-affine -from-itk "${OUTPUT_DIR}"/T2w2T1w.mat -to-flirt "${OUTPUT_DIR}"/flirt.nii.gz ${mov} ${trg}
-wb_command -convert-warpfield -from-itk ${finalTransformNonLin}.nii.gz -to-fnirt "${OUTPUT_DIR}"/fnirt.nii.gz ${mov}
-cp "$OUTPUT_DIR"/T2w2T1w.nii.gz "$OutputT2wImage".nii.gz
-${FSLDIR}/bin/convertwarp --relout --rel -r "$OutputT2wImage".nii.gz -w "${OUTPUT_DIR}"/fnirt.nii.gz --postmat="${OUTPUT_DIR}"/flirt.mat --out="$OutputT2wTransform"
+# T2w register to T1w
+sh ${HCPPIPEDIR_Shared}/utils/generalRegister.sh -i $mov -o $WORK_DIR -w $WORK_DIR -r $trg -m nonlinear -l MI -f ants
+
+# rename nonlinear transform to T2w/T2wToT1wReg/T2w2T1w.nii.gz
+mv -f ${WORK_DIR}/nonlinear.nii.gz ${WORK_DIR}/T2w2T1w.nii.gz
+
+# copy some result file to T1w/ and T1w/xfms/
+mv -f ${WORK_DIR}/final.nii.gz ${OUTPUT_DIR}/T2w_acpc_dc.nii.gz
+cp ${WORK_DIR}/T2w2T1w.nii.gz ${XFM_DIR}/T2w_reg_dc.nii.gz
+cp ${trg} ${OUTPUT_DIR}/T1w_acpc_dc.nii.gz
+
+# # convert ANTs .mat file into FSL .mat format
+# c3d_affine_tool -ref ${trg} -src ${mov} -itk "${OUTPUT_DIR}"/T2w2T1w.mat -ras2fsl -o flirt.mat
+# # wb_command -convert-affine -from-itk "${OUTPUT_DIR}"/T2w2T1w.mat -to-flirt "${OUTPUT_DIR}"/flirt.nii.gz ${mov} ${trg}
+# wb_command -convert-warpfield -from-itk ${finalTransformNonLin}.nii.gz -to-fnirt "${OUTPUT_DIR}"/fnirt.nii.gz ${mov}
+# cp "$OUTPUT_DIR"/T2w2T1w.nii.gz "$OutputT2wImage".nii.gz
+# ${FSLDIR}/bin/convertwarp --relout --rel -r "$OutputT2wImage".nii.gz -w "${OUTPUT_DIR}"/fnirt.nii.gz --postmat="${OUTPUT_DIR}"/flirt.mat --out="$OutputT2wTransform"
 
 # cp "$T1wImageBrain".nii.gz "$WD"/"$T1wImageBrainFile".nii.gz
 # ${FSLDIR}/bin/epi_reg --epi="$T2wImageBrain" --t1="$T1wImage" --t1brain="$WD"/"$T1wImageBrainFile" --out="$WD"/T2w2T1w
 # ${FSLDIR}/bin/applywarp --rel --interp=spline --in="$T2wImage" --ref="$T1wImage" --premat="$WD"/T2w2T1w.mat --out="$WD"/T2w2T1w
 # ${FSLDIR}/bin/fslmaths "$WD"/T2w2T1w -add 1 "$WD"/T2w2T1w -odt float
 # cp "$T1wImage".nii.gz "$OutputT1wImage".nii.gz
-# cp "$T1wImageBrain".nii.gz "$OutputT1wImageBrain".nii.gz
 # ${FSLDIR}/bin/fslmerge -t $OutputT1wTransform "$T1wImage".nii.gz "$T1wImage".nii.gz "$T1wImage".nii.gz
 # ${FSLDIR}/bin/fslmaths $OutputT1wTransform -mul 0 $OutputT1wTransform
 # cp "$WD"/T2w2T1w.nii.gz "$OutputT2wImage".nii.gz

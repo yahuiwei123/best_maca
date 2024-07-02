@@ -54,9 +54,9 @@ for Subject in `echo $Subjlist | sed -e 's/@/ /g'` ; do
   #Input Variables
   SubjectID="$Subject" #FreeSurfer Subject ID Name
   SubjectDIR="${StudyFolder}/${Subject}/T1w" #Location to Put FreeSurfer Subject's Folder
-  T1wImage="${StudyFolder}/${Subject}/T1w/T1w_acpc_dc_restore.nii" #T1w FreeSurfer Input (Full Resolution)
-  T1wImageBrain="${StudyFolder}/${Subject}/T1w/T1w_acpc_dc_restore_brain.nii" #T1w FreeSurfer Input (Full Resolution)
-  T2wImage="${StudyFolder}/${Subject}/T1w/T2w_acpc_dc_restore.nii" #T2w FreeSurfer Input (Full Resolution)
+  T1wImage="${StudyFolder}/${Subject}/T1w/T1w_acpc_dc_restore.nii.gz" #T1w FreeSurfer Input (Full Resolution)
+  T1wImageBrain="${StudyFolder}/${Subject}/T1w/T1w_acpc_dc_restore_brain.nii.gz" #T1w FreeSurfer Input (Full Resolution)
+  T2wImage="${StudyFolder}/${Subject}/T1w/T2w_acpc_dc_restore.nii.gz" #T2w FreeSurfer Input (Full Resolution)
   FSLinearTransform="${HCPPIPEDIR_Templates}/fs_xfms/eye.xfm" #Identity
   T2wFlag="${T2wFlag:=T2w}" # T2w, FLAIR or NONE. Default is T2w
   SPECIES="Macaque"

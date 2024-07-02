@@ -1,6 +1,5 @@
 #!/bin/bash 
 set -e
-set -x
 # Requirements for this script
 #  installed versions of: FSL (version 5.0.6), caret7 (a.k.a. Connectome Workbench) (version 1.0)
 #  environment: FSLDIR  CARET7DIR
@@ -32,9 +31,9 @@ defaultopt() {
 ################################################### OUTPUT FILES #####################################################
 
 # Output images (in $WD): 
-#      T1wmulT2w  T1wmulT2w_brain  T1wmulT2w_norm  
-#      SmoothNorm_sX  T1wmulT2w_norm_sX  
-#      T1wmulT2w_norm_modulate  T1wmulT2w_norm_modulate_mask  bias_raw   
+#      T1wmulT2w  T1wmulT2w_brain  T1wmulT2w_brain_norm  
+#      SmoothNorm_sX  T1wmulT2w_brain_norm_sX  
+#      T1wmulT2w_brain_norm_modulate  T1wmulT2w_brain_norm_modulate_mask  bias_raw   
 # Output images (not in $WD): 
 #      $OutputBiasField 
 #      $OutputT1wRestoredBrainImage $OutputT1wRestoredImage 
@@ -80,34 +79,35 @@ echo " " >> $WD/log.txt
 
 # Form sqrt(T1w*T2w), mask this and normalise by the mean
 ${FSLDIR}/bin/fslmaths $T1wImage -mul $T2wImage -abs -sqrt $WD/T1wmulT2w.nii.gz -odt float
-meanbrainval=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w.nii.gz -M`
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w.nii.gz -div $meanbrainval $WD/T1wmulT2w_norm.nii.gz
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w.nii.gz -mas $T1wImageBrain $WD/T1wmulT2w_brain.nii.gz
+meanbrainval=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w_brain.nii.gz -M`
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain.nii.gz -div $meanbrainval $WD/T1wmulT2w_brain_norm.nii.gz
 
 # Smooth the normalised sqrt image, using within-mask smoothing : s(Mask*X)/s(Mask)
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_norm.nii.gz -bin -s $BiasFieldSmoothingSigma $WD/SmoothNorm_s${BiasFieldSmoothingSigma}.nii.gz
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_norm.nii.gz -s $BiasFieldSmoothingSigma -div $WD/SmoothNorm_s${BiasFieldSmoothingSigma}.nii.gz $WD/T1wmulT2w_norm_s${BiasFieldSmoothingSigma}.nii.gz
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain_norm.nii.gz -bin -s $BiasFieldSmoothingSigma $WD/SmoothNorm_s${BiasFieldSmoothingSigma}.nii.gz
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain_norm.nii.gz -s $BiasFieldSmoothingSigma -div $WD/SmoothNorm_s${BiasFieldSmoothingSigma}.nii.gz $WD/T1wmulT2w_brain_norm_s${BiasFieldSmoothingSigma}.nii.gz
 
 # Divide normalised sqrt image by smoothed version (to do simple bias correction)
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_norm.nii.gz -div $WD/T1wmulT2w_norm_s$BiasFieldSmoothingSigma.nii.gz $WD/T1wmulT2w_norm_modulate.nii.gz
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain_norm.nii.gz -div $WD/T1wmulT2w_brain_norm_s$BiasFieldSmoothingSigma.nii.gz $WD/T1wmulT2w_brain_norm_modulate.nii.gz
 
 # Create a mask using a threshold at Mean - 0.5*Stddev, with filling of holes to remove any non-grey/white tissue.
-STD=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w_norm_modulate.nii.gz -S`
+STD=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w_brain_norm_modulate.nii.gz -S`
 echo $STD
-MEAN=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w_norm_modulate.nii.gz -M`
+MEAN=`${FSLDIR}/bin/fslstats $WD/T1wmulT2w_brain_norm_modulate.nii.gz -M`
 echo $MEAN
 Lower=`echo "$MEAN - ($STD * $Factor)" | bc -l`
 echo $Lower
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_norm_modulate -thr $Lower -bin -ero -mul 255 $WD/T1wmulT2w_norm_modulate_mask
-${CARET7DIR}/wb_command -volume-remove-islands $WD/T1wmulT2w_norm_modulate_mask.nii.gz $WD/T1wmulT2w_norm_modulate_mask.nii.gz
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain_norm_modulate -thr $Lower -bin -ero -mul 255 $WD/T1wmulT2w_brain_norm_modulate_mask
+${CARET7DIR}/wb_command -volume-remove-islands $WD/T1wmulT2w_brain_norm_modulate_mask.nii.gz $WD/T1wmulT2w_brain_norm_modulate_mask.nii.gz
 
 # Extrapolate normalised sqrt image from mask region out to whole FOV
-${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_norm.nii.gz -mas $WD/T1wmulT2w_norm_modulate_mask.nii.gz -dilall $WD/bias_raw.nii.gz -odt float
+${FSLDIR}/bin/fslmaths $WD/T1wmulT2w_brain_norm.nii.gz -mas $WD/T1wmulT2w_brain_norm_modulate_mask.nii.gz -dilall $WD/bias_raw.nii.gz -odt float
 ${FSLDIR}/bin/fslmaths $WD/bias_raw.nii.gz -s $BiasFieldSmoothingSigma $OutputBiasField
 
 # Use bias field output to create corrected images
-${FSLDIR}/bin/fslmaths $T1wImage -div $OutputBiasField -mas $T1wImage $OutputT1wRestoredBrainImage -odt float
+${FSLDIR}/bin/fslmaths $T1wImage -div $OutputBiasField -mas $T1wImageBrain $OutputT1wRestoredBrainImage -odt float
 ${FSLDIR}/bin/fslmaths $T1wImage -div $OutputBiasField $OutputT1wRestoredImage -odt float
-${FSLDIR}/bin/fslmaths $T2wImage -div $OutputBiasField -mas $T1wImage $OutputT2wRestoredBrainImage -odt float
+${FSLDIR}/bin/fslmaths $T2wImage -div $OutputBiasField -mas $T1wImageBrain $OutputT2wRestoredBrainImage -odt float
 ${FSLDIR}/bin/fslmaths $T2wImage -div $OutputBiasField $OutputT2wRestoredImage -odt float
 
 echo " "
@@ -118,12 +118,12 @@ echo " END: `date`" >> $WD/log.txt
 if [ -e $WD/qa.txt ] ; then rm -f $WD/qa.txt ; fi
 echo "cd `pwd`" >> $WD/qa.txt
 echo "# Look at the quality of the bias corrected output (T1w is brain only)" >> $WD/qa.txt
-echo "fslview $T1wImage $OutputT1wRestoredBrainImage" >> $WD/qa.txt
+echo "fslview $T1wImageBrain $OutputT1wRestoredBrainImage" >> $WD/qa.txt
 echo "fslview $T2wImage $OutputT2wRestoredImage" >> $WD/qa.txt
 echo "# Optional debugging (multiplied image + masked + normalised versions)" >> $WD/qa.txt
-echo "fslview $WD/T1wmulT2w.nii.gz $WD/T1wmulT2w_norm.nii.gz $WD/T1wmulT2w_norm_modulate_mask -l Red -t 0.5" >> $WD/qa.txt
+echo "fslview $WD/T1wmulT2w.nii.gz $WD/T1wmulT2w_brain_norm.nii.gz $WD/T1wmulT2w_brain_norm_modulate_mask -l Red -t 0.5" >> $WD/qa.txt
 echo "# Optional debugging (smoothed version, extrapolated version)" >> $WD/qa.txt
-echo "fslview $WD/T1wmulT2w_norm_s${BiasFieldSmoothingSigma}.nii.gz $WD/bias_raw" >> $WD/qa.txt
+echo "fslview $WD/T1wmulT2w_brain_norm_s${BiasFieldSmoothingSigma}.nii.gz $WD/bias_raw" >> $WD/qa.txt
 
 
 ##############################################################################################

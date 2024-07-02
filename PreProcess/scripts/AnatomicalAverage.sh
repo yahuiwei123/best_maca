@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-set -x
+
 # Some default parameters
 clean_up=0
 
@@ -107,7 +107,7 @@ translist="${im1}"
 for im2 in $newimlist ; do
     if [ $im2 != $im1 ] ; then
         # register version of two images (whole heads still)
-	    ${HCPPIPEDIR}/shared/utils/generalRegister.sh -i $im2 -o $OUTPUT_DIR -w $WORK_DIR -r $im1 -m affine -l MI -c
+	    ${HCPPIPEDIR}/shared/utils/generalRegister.sh -i $im2 -o $OUTPUT_DIR -w $WORK_DIR -r $im1 -m affine -l MI -f fsl -c
         echo $?
         translist="$? ${translist}"
     fi

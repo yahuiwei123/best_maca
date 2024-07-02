@@ -2,6 +2,7 @@
 set -e
 set -x
 # Some default parameters
+func="fsl"
 clean_up=0
 
 # Help message
@@ -9,22 +10,23 @@ usage () {
 echo "
 === generalRegister ===
 
-This script provides an alternative to FreeSurfer's -talairach, 
--gcareg, and -careg steps. It uses antsRegistration to create a linear
-affine (talairach.xfm and talairach.lta) and a nonlinear 
-(talairach.m3z) warp to Talairach space.
+This script provides a general robust registration function for 
+rigid, affine, nonlinear transform. The registration combines ANTs
+and FSL for best performance.
 
 Usage:
-sh MacaqueReg.sh -i [movable] -o [output directory] -g [gca file path] -r [registration stages] [-c]
+sh generalRegister.sh -i [movable] -o [output directory] -w [work directory] -r [target] -m [mode] -l [loss function] [-c]
 
 Required arguments:
 -i	input volume (to be registered, needs to be skullstripped).
 -o	output directory (e.g. ${subject}/mri/transforms).
+-w  work directory
 -r	target volume (the space to be registered to).
 -m	mode (rigid, affine, nonlinear transform to be apply).
 -l	loss function (MI, CC).
 
 Optional arguments
+-f  linear registration function (ants or fsl). Default: fsl.
 -c	clean up intermediate files. Include this flag to remove some 
 	intermediate files (saves disk space). Default: off.
 -h 	display this help message.
@@ -38,7 +40,7 @@ steps if existing warps are found in the output directory.
 }
 
 # Parse arguments
-while getopts ":i:o:w:r:m:ch" opt; do
+while getopts ":i:o:w:r:m:l:f:ch" opt; do
   case $opt in
     i) mov=${OPTARG};;
     o) OUTPUT_DIR=${OPTARG};;
@@ -46,6 +48,7 @@ while getopts ":i:o:w:r:m:ch" opt; do
     r) trg=${OPTARG};;
     m) mode=${OPTARG};;
 	l) loss=${OPTARG};;
+	f) func=${OPTARG};;
     c) clean_up=1;;
     h)
 	  usage
@@ -84,8 +87,14 @@ elif [ "x" == "x$mode" ]; then
 elif [ "x" == "x$loss" ]; then
     echo "-m [loss function] input is required"
     exit 1
+elif [ "x" == "x$func" ]; then
+    echo "-m [register func] input is required"
+    exit 1
 elif [ "x" == "x$(which antsRegistration)" ]; then
   echo "Could not find ANTs"
+  exit 1
+elif [ "x" == "x$(which flirt)" ]; then
+  echo "Could not find FSL"
   exit 1
 fi
 
@@ -97,6 +106,7 @@ Running registerTalairach with the following parameters:
 - reference volume: 		${trg}
 - register mode:            ${mode}
 - loss function:			${loss}
+- register function:		${func}
 "
 
 if [[ clean_up -eq 1 ]]
@@ -108,39 +118,74 @@ fi
 
 # Rigid register functions
 doRigid() {
-    # Initialization
-	antsRegistration -d 3 --float 1 -r [${trg}, ${mov} , 0] -t Rigid[0.1] \
-	--winsorize-image-intensities [0.005, 0.995] \
-	-m MI[${trg}, ${mov}, 1, 32] -c 0 -f 4 -s 2 \
-	-o [${regBase}_init, ${regBase}_init.nii.gz] -v
+	if [[ "$func" == "ants" ]]
+	then
+		# Initialization (ANTs)
+		antsRegistration -d 3 --float 1 -r [${trg}, ${mov} , 0] -t Rigid[0.1] \
+		--winsorize-image-intensities [0.005, 0.995] \
+		-m MI[${trg}, ${mov}, 1, 32] -c 0 -f 4 -s 2 \
+		-o [${regBase}_init, ${regBase}_init.nii.gz] -v
 
-	# Rigid registration. using the initialization
-	antsRegistration --dimensionality 3 --float 1 \
-	--interpolation Linear \
-	--winsorize-image-intensities [0.005, 0.995] \
-	--use-histogram-matching 1 \
-	--transform Rigid[0.25] \
-	--metric MI[${trg},${mov},1,32,Regular,0.25] \
-	--convergence [500,1e-7,10] \
-	--shrink-factors 2 \
-	--smoothing-sigmas 1vox \
-	--output [${regBase}_rigid, ${regBase}_rigid.nii.gz] \
-	--v
+		# Rigid registration. using the initialization (ANTs)
+		antsRegistration --dimensionality 3 --float 1 \
+		--interpolation Linear \
+		--winsorize-image-intensities [0.005, 0.995] \
+		--use-histogram-matching 1 \
+		--transform Rigid[0.25] \
+		--metric MI[${trg}, ${regBase}_init.nii.gz, 1, 32, Regular, 0.2] \
+		--convergence [1000x500x250x100, 1e-7, 10] \
+		--shrink-factors 8x4x2x1 \
+		--smoothing-sigmas 3x2x1x0vox \
+		--output [${regBase}_rigid, ${regBase}_rigid.nii.gz] \
+		--v
+	elif [[ "$func" == "fsl" ]]
+	then
+		# Initialization (FLIRT)
+		flirt -in ${mov} \
+		-ref ${trg} \
+		-out ${regBase}_init.nii.gz \
+		-omat ${regBase}_init0GenericAffine.mat \
+		-dof 6
+
+		# Rigid registration. using the initialization (FLIRT)
+		flirt -in ${regBase}_init.nii.gz \
+		-ref ${trg} \
+		-out ${regBase}_rigid.nii.gz \
+		-omat ${regBase}_rigid0GenericAffine.mat \
+		-dof 6
+	else
+		echo "Registration function ${func} is not valid!"
+		exit 0
+	fi
 }
 
 doAffine() {
-    # Affine registration using affine obtain by {doRidid} as initial transform
-	antsRegistration --dimensionality 3 --float 1 \
-	--interpolation Linear \
-	--winsorize-image-intensities [0.005, 0.995] \
-	--use-histogram-matching 1 \
-	--transform Affine[0.25] \
-	--metric MI[${trg},${regBase}_rigid.nii.gz,1,32,Regular,0.25] \
-	--convergence [1000x500x250x100,1e-7,10] \
-	--shrink-factors 8x4x2x1 \
-	--smoothing-sigmas 3x2x1x0vox \
-	--output [${regBase}_affine, ${regBase}_affine.nii.gz] \
-	--v
+	if [[ "$func" == "ants" ]]
+	then
+		# Affine registration using affine obtain by {doRidid} as initial transform (ANTs)
+		antsRegistration --dimensionality 3 --float 1 \
+		--interpolation Linear \
+		--winsorize-image-intensities [0.005, 0.995] \
+		--use-histogram-matching 1 \
+		--transform Affine[0.25] \
+		--metric MI[${trg}, ${regBase}_rigid.nii.gz, 1, 32, Regular, 0.25] \
+		--convergence [1000x500x250x100, 1e-7, 10] \
+		--shrink-factors 8x4x2x1 \
+		--smoothing-sigmas 3x2x1x0vox \
+		--output [${regBase}_affine, ${regBase}_affine.nii.gz] \
+		--v
+	elif [[ "$func" == "fsl" ]]
+	then
+		# Affine registration using affine obtain by {doRidid} as initial transform (FLIRT)
+		flirt -in ${regBase}_rigid.nii.gz \
+		-ref ${trg} \
+		-out ${regBase}_affine.nii.gz \
+		-omat ${regBase}_affine0GenericAffine.mat \
+		-dof 9
+	else
+		echo "Registration function ${func} is not valid!"
+		exit 0
+	fi
 }
 
 doNonlinear() {
@@ -163,7 +208,23 @@ doNonlinear() {
 doRegister() {
     if [ "$mode" = "rigid" ] ; then
         doRigid;
-		
+		if [[ "$func" == "fsl" ]]
+		then
+			wb_command -convert-affine \
+			-from-flirt \
+				${regBase}_init0GenericAffine.mat \
+				${mov} ${trg} \
+			-to-itk \
+				${regBase}_init0GenericAffine.mat
+
+			wb_command -convert-affine \
+			-from-flirt \
+				${regBase}_rigid0GenericAffine.mat \
+				${regBase}_init.nii.gz ${trg} \
+			-to-itk \
+				${regBase}_rigid0GenericAffine.mat
+		fi
+
         # Combine all transforms so far to create an initial transform for the nonlinear registration
         antsApplyTransforms --dimensionality 3 \
         --input ${mov} --reference-image ${trg} \
@@ -176,7 +237,35 @@ doRegister() {
 
     if [ "$mode" = "affine" ] ; then
         doRigid;
-        doAffine;
+
+		if [[ "$func" == "fsl" ]]
+		then
+			wb_command -convert-affine \
+			-from-flirt \
+				${regBase}_init0GenericAffine.mat \
+				${mov} ${trg} \
+			-to-itk \
+				${regBase}_init0GenericAffine.mat
+
+			wb_command -convert-affine \
+			-from-flirt \
+				${regBase}_rigid0GenericAffine.mat \
+				${regBase}_init.nii.gz ${trg} \
+			-to-itk \
+				${regBase}_rigid0GenericAffine.mat
+		fi
+
+		doAffine;
+
+		if [[ "$func" == "fsl" ]]
+		then
+			wb_command -convert-affine \
+			-from-flirt \
+				${regBase}_affine0GenericAffine.mat \
+				${regBase}_rigid.nii.gz ${trg} \
+			-to-itk \
+				${regBase}_affine0GenericAffine.mat
+		fi
 
         # Combine all transforms so far to create an initial transform for the nonlinear registration
         antsApplyTransforms --dimensionality 3 \
@@ -193,6 +282,17 @@ doRegister() {
     if [ "$mode" = "nonlinear" ] ; then
 		doRigid;
         doAffine;
+
+		# Combine all transforms so far to create an initial transform for the nonlinear registration
+        antsApplyTransforms --dimensionality 3 \
+        --input ${mov} --reference-image ${trg} \
+        --output Linear[${regBase}_linear.mat] \
+        --interpolation Linear \
+        --transform ${regBase}_affine0GenericAffine.mat \
+        --transform ${regBase}_rigid0GenericAffine.mat \
+        --transform ${regBase}_init0GenericAffine.mat \
+        --v
+
 		doNonlinear;
 
         # Combine all transforms so far to create an initial transform for the nonlinear registration
@@ -241,20 +341,29 @@ register_one_step() {
 	then
 		mov=${mov}
 		trg=${trg}
+
+		# Obtain name of registration file
+		movBase=`basename ${mov}`
+		movBase=${movBase%%.*}
+		trgBase=`basename ${trg}`
+		trgBase=${trgBase%%.*}
 		regBase="${WORK_DIR}"/"${movBase}"_to_"${trgBase}"
 
 		doRegister;
 	else
+		# Exchange mov and trg
 		tmp=${mov}
 		mov=${trg}
 		trg=${tmp}
+
+		# Obtain name of registration file
+		movBase=`basename ${mov}`
+		movBase=${movBase%%.*}
+		trgBase=`basename ${trg}`
+		trgBase=${trgBase%%.*}
 		regBase="${WORK_DIR}"/"${movBase}"_to_"${trgBase}"
 
 		doRegister;
-
-		tmp=${mov}
-		mov=${trg}
-		trg=${tmp}
 	fi	
 
 	# Combine the transforms
@@ -269,7 +378,7 @@ register_one_step() {
         if [ "$mode" = "nonlinear" ] ; then
             antsApplyTransforms --dimensionality 3 --float 1 \
             --input ${mov} --reference-image ${trg} \
-            --output [${WORK_DIR}/${finalTransformNonLin}.nii.gz, 1] \
+            --output [${OUTPUT_DIR}/${finalTransformNonLin}.nii.gz, 1] \
             --interpolation Linear \
             --transform ${regBase}_nonlinear1Warp.nii.gz \
             --transform ${regBase}_nonlinear0GenericAffine.mat \
@@ -278,16 +387,17 @@ register_one_step() {
             # Apply transform to movable volume
 			antsApplyTransforms --dimensionality 3 --float 1 \
 			--input ${mov} --reference-image ${trg} \
-			--output ${regBase}_final.nii.gz \
+			--output ${WORK_DIR}/final.nii.gz \
 			--interpolation Linear \
-			--transform ${WORK_DIR}/${finalTransformNonLin}.nii.gz \
+			--transform ${OUTPUT_DIR}/${finalTransformNonLin}.nii.gz \
 			--v
         fi
+		
 
 		# Also combine the linear tranform
 		antsApplyTransforms --dimensionality 3 --float 1 \
 		--input ${mov} --reference-image ${trg} \
-		--output Linear[${WORK_DIR}/${finalTransformLin}.mat] \
+		--output Linear[${OUTPUT_DIR}/${finalTransformLin}.mat] \
 		--interpolation Linear \
 		--transform ${regBase}_linear.mat \
 		--v
@@ -295,9 +405,9 @@ register_one_step() {
 		# Apply transform to movable volume
 		antsApplyTransforms --dimensionality 3 --float 1 \
 		--input ${mov} --reference-image ${trg} \
-		--output ${regBase}_final.nii.gz \
+		--output ${WORK_DIR}/final.nii.gz \
 		--interpolation Linear \
-		--transform ${WORK_DIR}/${finalTransformLin}.mat \
+		--transform ${OUTPUT_DIR}/${finalTransformLin}.mat \
 		--v
 
 	else
@@ -306,12 +416,17 @@ register_one_step() {
 		echo Combining inverse warp from NMT to mov and warp from NMT to talairach
 		echo
 		
+		# swap back
+		tmp=${mov}
+		mov=${trg}
+		trg=${tmp}
+
 		# Movable is larger than NMT
 		# Invert the second transform here since we were going from NMT to movable
         if [ "$mode" = "nonlinear" ] ; then
             antsApplyTransforms --dimensionality 3 --float 1 \
             --input ${mov} --reference-image ${trg} \
-            --output [${WORK_DIR}/${finalTransformNonLin}.nii.gz, 1] \
+            --output [${OUTPUT_DIR}/${finalTransformNonLin}.nii.gz, 1] \
             --interpolation Linear \
             --transform [${regBase}_nonlinear0GenericAffine.mat, 1] \
             --transform ${regBase}_nonlinear1InverseWarp.nii.gz \
@@ -320,16 +435,16 @@ register_one_step() {
 			# Apply transform to movable volume
 			antsApplyTransforms --dimensionality 3 --float 1 \
 			--input ${mov} --reference-image ${trg} \
-			--output ${regBase}_final.nii.gz \
+			--output ${WORK_DIR}/final.nii.gz \
 			--interpolation Linear \
-			--transform ${WORK_DIR}/${finalTransformNonLin}.nii.gz \
+			--transform ${OUTPUT_DIR}/${finalTransformNonLin}.nii.gz \
 			--v
         fi
 
 		# Also combine the linear tranform
 		antsApplyTransforms --dimensionality 3 --float 1 \
 		--input ${mov} --reference-image ${trg} \
-		--output Linear[${WORK_DIR}/${finalTransformLin}.mat] \
+		--output Linear[${OUTPUT_DIR}/${finalTransformLin}.mat] \
 		--interpolation Linear \
 		--transform [${regBase}_linear.mat, 1] \
 		--v
@@ -337,9 +452,9 @@ register_one_step() {
 		# Apply transform to movable volume
 		antsApplyTransforms --dimensionality 3 --float 1 \
 		--input ${mov} --reference-image ${trg} \
-		--output ${regBase}_final.nii.gz \
+		--output ${WORK_DIR}/final.nii.gz \
 		--interpolation Linear \
-		--transform ${WORK_DIR}/${finalTransformLin}.mat \
+		--transform ${OUTPUT_DIR}/${finalTransformLin}.mat \
 		--v
 
 	fi
@@ -347,31 +462,42 @@ register_one_step() {
 
 finalTransformLin=linear
 finalTransformNonLin=nonlinear
-movBase=`basename ${mov}`
-movBase=${movBase%%.*}
-trgBase=`basename ${trg}`
-trgBase=${trgBase%%.*}
 
 # Setup directory
 mkdir -p $WORK_DIR
 mkdir -p $OUTPUT_DIR
 
+# Crop and pad template to generate a robust template for registraion
+read xmin xsize ymin ysize zmin zsize _ _ <<< $(fslstats ${trg} -w)
+fslroi ${trg} ${WORK_DIR}/template.nii.gz $xmin $xsize $ymin $ysize $zmin $zsize
+if [ -e ${WORK_DIR}/`basename ${trg}`]
+then
+	rm ${WORK_DIR}/`basename ${trg}`
+fi
+3dZeropad -RL 256 -AP 256 -IS 256 -prefix ${WORK_DIR}/`basename ${trg}` ${WORK_DIR}/template.nii.gz
+rm ${WORK_DIR}/template.nii.gz
+trg=${WORK_DIR}/`basename ${trg}`
+
 # Do the registrations
 register_one_step;
 
+rm ${WORK_DIR}/`basename ${trg}`
+
 # Restore result
-mv ${regBase}_final.nii.gz $OUTPUT_DIR
+if [ "${WORK_DIR}" != "${OUTPUT_DIR}" ]
+then
+	mv -f ${WORK_DIR}/final.nii.gz $OUTPUT_DIR
+fi
 
 # Clean up work dir
 if [ "${clean_up}" -eq 1 ]
 then
 	echo Removed:
-	rm -rv ${WORK_DIR}/${regBase}*
+	rm -rv ${WORK_DIR}
 fi
 
 echo
 echo register done.
 echo
 
-return `basename ${regBase}_final.nii.gz`
-
+exit 0

@@ -1,5 +1,6 @@
 #!/bin/bash
-
+set -e
+set -x
 # Make image interpolated to 1mm-resolution for FS (human) or Make scaled image interpolated to 1mm-resolution
 
 CMD=`echo $0 | sed -e 's/^\(.*\)\/\([^\/]*\)/\2/'`
@@ -69,39 +70,49 @@ else
 	dimey=`fslval "$out" dim2`
 	dimez=`fslval "$out" dim3`
 	if [ $dimex -gt 254 ] || [ $dimey -gt 254 ] || [ $dimez -gt 254 ] ; then
- 		echo "Error: matrix of input image should be less than 255 x 255 x 255"; exit 1
+ 		# echo "Error: matrix of input image should be less than 255 x 255 x 255"; exit 1
+		##### Revise begin.
+		# edit by yhwei
+		# processing fov is already 256
+		##### Revise end.
+		fslcreatehd $dimex $dimey $dimez 1 1 1 1 1 0 0 0 16 "$T1wImage"_pad
+		imcp "$T1wImage" "$T1wImage"_1mm.nii.gz
+		fslcpgeom "$T1wImage"_pad "$T1wImage"_1mm.nii.gz
+		fslorient -setsform -1 0 0 $originx 0 1 0 $originy 0 0 1 $originz 0 0 0 1 "$T1wImage"_1mm.nii.gz
+		rm "$T1wImage"_pad.nii.gz
+	else
+		padx=`echo "($size - $dimex) / 2" | bc`
+		pady=`echo "($size - $dimey) / 2" | bc`
+		padz=`echo "($size - $dimez) / 2" | bc`
+		padx2=`echo "$size - $dimex - $padx" | bc`
+		pady2=`echo "$size - $dimey - $pady" | bc`
+		padz2=`echo "$size - $dimez - $padz" | bc`
+
+		echo $padx $dimex $padx2
+		echo $pady $dimey $pady2
+		echo $padz $dimez $padz2
+
+		fslcreatehd $padx $dimey $dimez 1 1 1 1 1 0 0 0 16 "$out"_padx
+		fslcreatehd $padx2 $dimey $dimez 1 1 1 1 1 0 0 0 16 "$out"_padx2
+		fslmerge -x "$out" "$out"_padx2 "$out" "$out"_padx
+		fslcreatehd $size $pady $dimez 1 1 1 1 1 0 0 0 16 "$out"_pady
+		fslcreatehd $size $pady2 $dimez 1 1 1 1 1 0 0 0 16 "$out"_pady2
+		fslmerge -y "$out" "$out"_pady2 "$out" "$out"_pady
+		fslcreatehd $size $size $padz 1 1 1 1 1 0 0 0 16 "$out"_padz
+		fslcreatehd $size $size $padz2 1 1 1 1 1 0 0 0 16 "$out"_padz2
+		fslmerge -z "$out" "$out"_padz2 "$out" "$out"_padz
+
+		fslorient -setsformcode 1 "$out"
+		neworiginx=`echo "$originx + $padx2" | bc -l`
+		neworiginy=`echo "$originy - $pady2" | bc -l`
+		neworiginz=`echo "$originz - $padz2" | bc -l`
+		echo "`echo "1 / $res" | bc -l` 0 0 $padx2"
+		echo "0 `echo "1 / $res" | bc -l` 0 $pady2"
+		echo "0 0 `echo "1 / $res" | bc -l` $padz2"
+		echo "0 0 0 1"
+		fslorient -setsform -1 0 0 $neworiginx 0 1 0 $neworiginy 0 0 1 $neworiginz 0 0 0 1 "$out"
+		rm "$out"_padx.nii.gz "$out"_pady.nii.gz "$out"_padz.nii.gz "$out"_padx2.nii.gz "$out"_pady2.nii.gz "$out"_padz2.nii.gz
 	fi
-	padx=`echo "($size - $dimex) / 2" | bc`
-	pady=`echo "($size - $dimey) / 2" | bc`
-	padz=`echo "($size - $dimez) / 2" | bc`
-	padx2=`echo "$size - $dimex - $padx" | bc`
-	pady2=`echo "$size - $dimey - $pady" | bc`
-	padz2=`echo "$size - $dimez - $padz" | bc`
-
-	echo $padx $dimex $padx2
-	echo $pady $dimey $pady2
-	echo $padz $dimez $padz2
-
-	fslcreatehd $padx $dimey $dimez 1 1 1 1 1 0 0 0 16 "$out"_padx
-	fslcreatehd $padx2 $dimey $dimez 1 1 1 1 1 0 0 0 16 "$out"_padx2
-	fslmerge -x "$out" "$out"_padx2 "$out" "$out"_padx
-	fslcreatehd $size $pady $dimez 1 1 1 1 1 0 0 0 16 "$out"_pady
-	fslcreatehd $size $pady2 $dimez 1 1 1 1 1 0 0 0 16 "$out"_pady2
-	fslmerge -y "$out" "$out"_pady2 "$out" "$out"_pady
-	fslcreatehd $size $size $padz 1 1 1 1 1 0 0 0 16 "$out"_padz
-	fslcreatehd $size $size $padz2 1 1 1 1 1 0 0 0 16 "$out"_padz2
-	fslmerge -z "$out" "$out"_padz2 "$out" "$out"_padz
-
-	fslorient -setsformcode 1 "$out"
-	neworiginx=`echo "$originx + $padx2" | bc -l`
-	neworiginy=`echo "$originy - $pady2" | bc -l`
-	neworiginz=`echo "$originz - $padz2" | bc -l`
-	echo "`echo "1 / $res" | bc -l` 0 0 $padx2"
-	echo "0 `echo "1 / $res" | bc -l` 0 $pady2"
-	echo "0 0 `echo "1 / $res" | bc -l` $padz2"
-	echo "0 0 0 1"
-	fslorient -setsform -1 0 0 $neworiginx 0 1 0 $neworiginy 0 0 1 $neworiginz 0 0 0 1 "$out"
-	rm "$out"_padx.nii.gz "$out"_pady.nii.gz "$out"_padz.nii.gz "$out"_padx2.nii.gz "$out"_pady2.nii.gz "$out"_padz2.nii.gz
 
 fi
 

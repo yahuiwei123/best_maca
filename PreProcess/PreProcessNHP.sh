@@ -150,7 +150,7 @@ function AvgPadImage() {
             continue
         fi
 
-        # Average all        
+        # Average all
         sh ${HCPPIPEDIR}/PreProcess/scripts/AnatomicalAverage.sh \
         -i "${files}" \
         -o ${PRE_PATH}  \
@@ -178,8 +178,6 @@ function Augment() {
     rm ${nBEST_PATH}/T1w_DNS.nii.gz
     rm ${nBEST_PATH}/T1w_DNS_BFC.nii.gz
 }
-
-
 
 function SkullStrip() {
     # use nBEST to obtain brain mask
@@ -210,11 +208,23 @@ function SkullStrip() {
 }
 
 function Reorient() {
-    ###### [step7] Change the image orientation
+    ###### [step8] Change the image orientation
     
     ##### TODO
     # Register raw image to tamplate, so that the raw image can reorient into right orientation.
     ##### End
+    for Txw in T1w T2w; do
+        flirt -in ${PRE_PATH}/${Txw}.nii.gz -ref ${${Txw}TemplateBrain} \
+        -out ${PRE_PATH}/reorient.nii.gz -omat ${PRE_PATH}/reorient.mat \
+        -searchrx -180 180 -searchry -180 180 -searchrz -180 180
+        
+        applywarp --rel --in="${PRE_PATH}/${Txw}.nii.gz" --ref="${PRE_PATH}/${Txw}.nii.gz" \
+        --premat="${PRE_PATH}/reorient.mat" --out="${PRE_PATH}/reorient.nii.gz"
+        
+        info=`mri_info ${${Txw}TemplateBrain}`
+        orientation=$(echo "$info" | grep "Orientation" | awk -F ": " '{print $2}')
+        mri_convert ${PRE_PATH}/${Txw}.nii.gz --in_orientation ${orientation} ${PRE_PATH}/${Txw}.nii.gz
+    done
 
     ##### Revise begin.
     # edit by yhwei

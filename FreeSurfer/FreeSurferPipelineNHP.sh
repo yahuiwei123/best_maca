@@ -170,9 +170,9 @@ fi
 # a job will use.  If this environment variable is set, we will use it to determine the number of cores to
 # tell recon-all to use.
 
-NSLOTS=8
+NSLOTS=16
 if [[ -z ${NSLOTS} ]] ; then
-	num_cores=8
+	num_cores=16
 else
 	num_cores="${NSLOTS}"
 fi
@@ -367,16 +367,37 @@ function runNormalize2 () {
 # }
 
 function generate_wm () {    ####### added by Haiyan, generated wm.mgz and brain.finalsurfs.mgz
-	##### Revise begin.
+	DIR=`pwd`
+	cd "$SubjectDIR"/"$SubjectID"/mri
+
+	#### Revise begin.
     # edit by yhwei
-    # use nBEST to generate white matter mask
-    ##### Revise end.
+    # use nBEST to generate tissue mask
+
+	## Make nBEST work directory
+	mkdir -p "$SubjectDIR"/nBEST
+	mkdir -p "$SubjectDIR"/nBEST/brain_mask
+	mkdir -p "$SubjectDIR"/nBEST/brain_img
+	mri_convert brain.finalsurfs.mgz "$SubjectDIR"/nBEST/brain.finalsurfs.nii.gz
+	mri_convert brain.finalsurfs.mgz "$SubjectDIR"/nBEST/brain_img/brain.finalsurfs.nii.gz
+	fslmaths "$SubjectDIR"/nBEST/brain_img/brain.finalsurfs.nii.gz -bin "$SubjectDIR"/nBEST/brain_mask/brain.finalsurfs.nii.gz
+
+	## CSF, GM, WM segmentation
 	singularity exec --nv -B "$SubjectDIR"/nBEST:/workspace/demo/data -w ${HCPPIPEDIR}/shared/nbest/nbest python /workspace/demo/nBEST_tissue.py
-	mri_convert "$SubjectDIR"/"$SubjectID"/mri/brain.mgz "$SubjectDIR"/"$SubjectID"/mri/brain.nii.gz
-	cp "$SubjectDIR"/nBEST/brain_tissue/T1w_DNS_BFC_inm100.nii.gz "$SubjectDIR"/"$SubjectID"/mri/wm_mask.nii.gz
-	fslmaths "$SubjectDIR"/"$SubjectID"/mri/brain.nii.gz -mas "$SubjectDIR"/"$SubjectID"/mri/wm_mask.nii.gz "$SubjectDIR"/"$SubjectID"/mri/wm.seg.nii.gz
+	
+	## Extract the mask of 3 kinds of tissue
+	cp "$SubjectDIR"/nBEST/brain_cerebrum_mask/brain.finalsurfs.nii.gz "$SubjectDIR"/"$SubjectID"/mri/brain_cerebrum_mask.nii.gz
+	fslmaths "$SubjectDIR"/nBEST/brain_tissue/brain.finalsurfs.nii.gz -thr 3 -uthr 3 -bin "$SubjectDIR"/"$SubjectID"/mri/wm_mask.nii.gz
+	fslmaths "$SubjectDIR"/nBEST/brain_tissue/brain.finalsurfs.nii.gz -thr 2 -uthr 2 -bin "$SubjectDIR"/"$SubjectID"/mri/gm_mask.nii.gz
+	fslmaths "$SubjectDIR"/nBEST/brain_tissue/brain.finalsurfs.nii.gz -thr 1 -uthr 1 -bin "$SubjectDIR"/"$SubjectID"/mri/csf_mask.nii.gz
+
+	# Extract WM part from brain.finalsurfs.nii.gz
+	cp "$SubjectDIR"/nBEST/brain_tissue/brain.finalsurfs.nii.gz "$SubjectDIR"/"$SubjectID"/mri/wm_mask.nii.gz
+	fslmaths "$SubjectDIR"/nBEST/brain_img/brain.finalsurfs.nii.gz -mas "$SubjectDIR"/"$SubjectID"/mri/wm_mask.nii.gz "$SubjectDIR"/"$SubjectID"/mri/wm.seg.nii.gz
 	mri_convert -ns 1 -odt uchar "$SubjectDIR"/"$SubjectID"/mri/wm.seg.nii.gz "$SubjectDIR"/"$SubjectID"/mri/wm.seg.mgz
 	rm "$SubjectDIR"/"$SubjectID"/mri/wm.seg.nii.gz
+
+	##### Revise end.
 
 	###### edit wm with aseg, manually by Haiyan
 	###### add
@@ -390,9 +411,6 @@ function generate_wm () {    ####### added by Haiyan, generated wm.mgz and brain
 	
 
 	## Paste claustrum to wm.mgz - Takuya Hayashi, Oct 2017 
-	DIR=`pwd`
-	cd "$SubjectDIR"/"$SubjectID"/mri
-
 	cp wm.seg.mgz wm.asegedit.mgz
 	mri_convert wm.asegedit.mgz wm.asegedit.nii.gz
 	mri_convert aseg+claustrum.mgz aseg+claustrum.nii.gz
@@ -425,6 +443,10 @@ function generate_wm () {    ####### added by Haiyan, generated wm.mgz and brain
 			-w ../../../MNINonLinear/xfms/standard2acpc_dc.nii.gz -o wm_complement.nii.gz --interp=nn
 	"$PipelineScripts"/MakeDimto1mm.sh $SPECIES "$SubjectDIR"/"$SubjectID"/mri/wm_complement.nii.gz
 	mri_convert wm_complement_1mm.nii.gz wm_complement_1mm_LIA.nii.gz --out_orientation LIA -rt nearest
+	if [ -e wm_complement_1mm_LIA_256.nii.gz ]
+	then
+		rm wm_complement_1mm_LIA_256.nii.gz
+	fi
 	3dZeropad -RL 256 -AP 256 -IS 256 -prefix  wm_complement_1mm_LIA_256.nii.gz  wm_complement_1mm_LIA.nii.gz 
 	fslmaths wm_complement_1mm_LIA_256.nii.gz -bin -mul 250 -max wm.nii.gz wm.nii.gz
 	
@@ -433,6 +455,10 @@ function generate_wm () {    ####### added by Haiyan, generated wm.mgz and brain
 			-w ../../../MNINonLinear/xfms/standard2acpc_dc.nii.gz -o wmlesion_LR.nii.gz --interp=nn
 	"$PipelineScripts"/MakeDimto1mm.sh $SPECIES "$SubjectDIR"/"$SubjectID"/mri/wmlesion_LR.nii.gz
 	mri_convert wmlesion_LR_1mm.nii.gz wmlesion_LR_1mm_LIA.nii.gz --out_orientation LIA -rt nearest
+	if [ -e wmlesion_LR_1mm_LIA_256.nii.gz ]
+	then
+		rm wmlesion_LR_1mm_LIA_256.nii.gz
+	fi
 	3dZeropad -RL 256 -AP 256 -IS 256 -prefix  wmlesion_LR_1mm_LIA_256.nii.gz  wmlesion_LR_1mm_LIA.nii.gz 
 	fslmaths wm.nii.gz -mul wmlesion_LR_1mm_LIA_256.nii.gz wm_temp.nii.gz
 	fslmaths wm.nii.gz -sub wm_temp.nii.gz wm.nii.gz
@@ -448,7 +474,8 @@ function generate_wm () {    ####### added by Haiyan, generated wm.mgz and brain
 	cp brainmask.mgz brain.finalsurfs.mgz
 	# set the CSF in brain.finalsurfs.mgz to be zero
 	mri_convert brain.finalsurfs.mgz brain.finalsurfs.nii.gz
-	fslmaths brain.finalsurfs.nii.gz -mas CSF_mask_erode.nii.gz brain.finalsurfs.CSF.nii.gz
+	ImageMath 3 csf_mask_erode.nii.gz MD csf_mask.nii.gz 2
+	fslmaths brain.finalsurfs.nii.gz -mas csf_mask_erode.nii.gz brain.finalsurfs.CSF.nii.gz
 	fslmaths brain.finalsurfs.nii.gz -sub brain.finalsurfs.CSF.nii.gz brain.finalsurfs.nii.gz
 	# remove the cerebellum and brain stem part from brain.finalsurfs.nii.gz
 	fslmaths brain.finalsurfs.nii.gz -mas brain_cerebrum_mask.nii.gz brain.finalsurfs.nii.gz
@@ -706,11 +733,11 @@ elif [ "$RunMode" = "3" ] ; then
 	runFSaseg;runNormalize2;runFSwhite;runFSsurfreg;runFSpial;runFSfinish;
 elif [ "$RunMode" = "31" ] ; then
 
-        runFSwhite1;runFSwhite2;runFSsurfreg;
+	runFSwhite1;runFSwhite2;runFSsurfreg;
 
 elif [ "$RunMode" = "32" ] ; then
 
-        runFSpial;
+	runFSpial;
 
 elif [ "$RunMode" = "4" ] ; then
 

@@ -27,6 +27,7 @@ export HCPPIPEDIR_Config=${HCPPIPEDIR}/global/config
 export HCPPIPEDIR_PreFS=${HCPPIPEDIR}/PreFreeSurfer/scripts
 export HCPPIPEDIR_FS=${HCPPIPEDIR}/FreeSurfer/scripts
 export HCPPIPEDIR_PostFS=${HCPPIPEDIR}/PostFreeSurfer/scripts
+export HCPPIPEDIR_Shared=${HCPPIPEDIR}/shared
 export HCPPIPEDIR_fMRISurf=${HCPPIPEDIR}/fMRISurface/scripts
 export HCPPIPEDIR_fMRIVol=${HCPPIPEDIR}/fMRIVolume/scripts
 export HCPPIPEDIR_tfMRI=${HCPPIPEDIR}/tfMRI/scripts
