@@ -6,7 +6,7 @@ path_script=/n01dat01/yhwei/projects/Monkey_Surface/best_maca
 StudyFolder=/n01dat01/yhwei/projects/Monkey_Surface/datasets/test/
 Subject=M03
 
-sh ${path_script}/PreProcessPipelineBatchNHP.sh /n01dat01/yhwei/projects/Monkey_Surface/datasets/test/ M03 2 No
+# sh ${path_script}/PreProcessPipelineBatchNHP.sh /n01dat01/yhwei/projects/Monkey_Surface/datasets/test/ M03 2 No
 
 sh ${path_script}/PreFreeSurferPipelineBatchNHP.sh /n01dat01/yhwei/projects/Monkey_Surface/datasets/test/ M03 Yes
 
