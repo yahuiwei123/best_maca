@@ -154,66 +154,66 @@ mkdir -p ${StudyFolder}/${Subject}/T1w/nBEST
 cp -r ${StudyFolder}/${Subject}/nBEST/* ${StudyFolder}/${Subject}/T1w/nBEST
 
 
-# ########################################## DO WORK ##########################################
+########################################## DO WORK ##########################################
 
-# ######## LOOP over the same processing for T1w and T2w (just with different names) ########
+######## LOOP over the same processing for T1w and T2w (just with different names) ########
 
-# Modalities="T1w T2w"
+Modalities="T1w T2w"
 
-# for TXw in ${Modalities} ; do
-#     # set up appropriate input variables
-#     if [ $TXw = T1w ] ; then
-#         TXwInputImages="${T1wInputImages}"
-#         TXwFolder=${T1wFolder}
-#         TXwImage=${T1wImage}
-#         TXwTemplate=${T1wTemplate}
-#         TXwTemplate2mm=${T1wTemplate2mm}
-#         TXwTemplateBrain=${T1wTemplateBrain}
-#     else
-#         TXwInputImages="${T2wInputImages}"
-#         TXwFolder=${T2wFolder}
-#         TXwImage=${T2wImage}
-#         TXwTemplate=${T2wTemplate}
-#         TXwTemplate2mm=${T2wTemplate2mm}
-#         TXwTemplateBrain=${T2wTemplateBrain}
-#     fi
-#     OutputTXwImageSTRING=""
+for TXw in ${Modalities} ; do
+    # set up appropriate input variables
+    if [ $TXw = T1w ] ; then
+        TXwInputImages="${T1wInputImages}"
+        TXwFolder=${T1wFolder}
+        TXwImage=${T1wImage}
+        TXwTemplate=${T1wTemplate}
+        TXwTemplate2mm=${T1wTemplate2mm}
+        TXwTemplateBrain=${T1wTemplateBrain}
+    else
+        TXwInputImages="${T2wInputImages}"
+        TXwFolder=${T2wFolder}
+        TXwImage=${T2wImage}
+        TXwTemplate=${T2wTemplate}
+        TXwTemplate2mm=${T2wTemplate2mm}
+        TXwTemplateBrain=${T2wTemplateBrain}
+    fi
+    OutputTXwImageSTRING=""
 
-#     #### Gradient nonlinearity correction  (for T1w and T2w) ####
+    #### Gradient nonlinearity correction  (for T1w and T2w) ####
 
-# 	echo "NOT PERFORMING GRADIENT DISTORTION CORRECTION"
-# 	i=1
-# 	for Image in $TXwInputImages ; do
-# 	    ${RUN} ${FSLDIR}/bin/fslreorient2std $Image ${TXwFolder}/${TXwImage}${i}_gdc
-# 	    # ${RUN} ${FSLDIR}/bin/fslreorient2std `remove_ext $Image`_brain ${TXwFolder}/${TXwImage}${i}_gdc_brain
-# 	    OutputTXwImageSTRING="${OutputTXwImageSTRING}${TXwFolder}/${TXwImage}${i}_gdc "
-# 	    i=$(($i+1))
-# 	done
+	echo "NOT PERFORMING GRADIENT DISTORTION CORRECTION"
+	i=1
+	for Image in $TXwInputImages ; do
+	    ${RUN} ${FSLDIR}/bin/fslreorient2std $Image ${TXwFolder}/${TXwImage}${i}_gdc
+	    # ${RUN} ${FSLDIR}/bin/fslreorient2std `remove_ext $Image`_brain ${TXwFolder}/${TXwImage}${i}_gdc_brain
+	    OutputTXwImageSTRING="${OutputTXwImageSTRING}${TXwFolder}/${TXwImage}${i}_gdc "
+	    i=$(($i+1))
+	done
     
 
-#     #### Average Like Scans ####
+    #### Average Like Scans ####
 
-#     if [ `echo $TXwInputImages | wc -w` -gt 1 ] ; then
-# 	# mkdir -p ${TXwFolder}/Average${TXw}Images
-#         echo "PERFORMING SIMPLE AVERAGING"
-#         ${RUN} ${PipelineScripts}/AnatomicalAverage.sh -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} -m ${TemplateMask} -n -w ${TXwFolder}/Average${TXw}Images --noclean -v -b $BrainSize $OutputTXwImageSTRING
-#     else
-#         echo "ONLY ONE AVERAGE FOUND: COPYING"
-#         ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc ${TXwFolder}/${TXwImage}
-#     fi
+    if [ `echo $TXwInputImages | wc -w` -gt 1 ] ; then
+	# mkdir -p ${TXwFolder}/Average${TXw}Images
+        echo "PERFORMING SIMPLE AVERAGING"
+        ${RUN} ${PipelineScripts}/AnatomicalAverage.sh -o ${TXwFolder}/${TXwImage} -s ${TXwTemplate} -m ${TemplateMask} -n -w ${TXwFolder}/Average${TXw}Images --noclean -v -b $BrainSize $OutputTXwImageSTRING
+    else
+        echo "ONLY ONE AVERAGE FOUND: COPYING"
+        ${RUN} ${FSLDIR}/bin/imcp ${TXwFolder}/${TXwImage}1_gdc ${TXwFolder}/${TXwImage}
+    fi
 
-#     #### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
-#     #### Added by yhwei: begin
-#     mkdir -p ${TXwFolder}/ACPCAlignment
-#     ${RUN} ${PipelineScripts}/ACPCAlignmentNHP.sh \
-#         -w ${TXwFolder}/ACPCAlignment   \
-#         -i ${TXwFolder}/${TXwImage}.nii.gz   \
-#         -r ${TXwTemplateBrain}   \
-#         -o ${TXwFolder}   \
-#         -a ${TXwFolder}/xfms/
-# done
+    #### ACPC align T1w and T2w image to 0.7mm MNI T1wTemplate to create native volume space ####
+    #### Added by yhwei: begin
+    mkdir -p ${TXwFolder}/ACPCAlignment
+    ${RUN} ${PipelineScripts}/ACPCAlignmentNHP.sh \
+        -w ${TXwFolder}/ACPCAlignment   \
+        -i ${TXwFolder}/${TXwImage}.nii.gz   \
+        -r ${TXwTemplateBrain}   \
+        -o ${TXwFolder}   \
+        -a ${TXwFolder}/xfms/
+done
 
-# ######## END LOOP over T1w and T2w #########
+######## END LOOP over T1w and T2w #########
 
 
 if [ "${withT2}" = "Yes" ] ; then
