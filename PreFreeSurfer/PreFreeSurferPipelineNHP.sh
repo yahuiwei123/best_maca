@@ -217,17 +217,17 @@ done
 
 
 if [ "${withT2}" = "Yes" ] ; then
-    # #### T2w to T1w Registration and Optional Readout Distortion Correction ####
-    # echo "Running Registration from T2w to T1w:"
-    # wdir=${T2wFolder}/T2wToT1wReg
-    # mkdir -p ${wdir}
+    #### T2w to T1w Registration and Optional Readout Distortion Correction ####
+    echo "Running Registration from T2w to T1w:"
+    wdir=${T2wFolder}/T2wToT1wReg
+    mkdir -p ${wdir}
 
-    # ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
-    #     -w ${wdir} \
-    #     -r ${T1wFolder}/${T1wImage}_acpc.nii.gz \
-    #     -i ${T2wFolder}/${T2wImage}_acpc.nii.gz \
-    #     -o ${T1wFolder} \
-    #     -a ${T1wFolder}/xfms/ \
+    ${RUN} ${PipelineScripts}/T2wToT1wReg.sh \
+        -w ${wdir} \
+        -r ${T1wFolder}/${T1wImage}_acpc.nii.gz \
+        -i ${T2wFolder}/${T2wImage}_acpc.nii.gz \
+        -o ${T1wFolder} \
+        -a ${T1wFolder}/xfms/ \
         
 
 
